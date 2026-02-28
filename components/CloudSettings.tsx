@@ -107,9 +107,9 @@ const CloudSettings: React.FC<CloudSettingsProps> = ({ config, onSave, onBack })
             <div className="mt-3 p-4 bg-slate-900 rounded-xl text-white space-y-4 animate-fadeIn">
               <ol className="text-[10px] space-y-2 list-decimal ml-4 opacity-80 font-medium">
                 <li>Open your <a href="https://docs.google.com/spreadsheets/d/1Temch-33pBSaeWuU64BxtAqPTDILX-j4m6CIZX3VgFs/edit" target="_blank" className="text-indigo-400 underline">RestoHub Sheet</a>.</li>
-                <li>Go to <b>Extensions > Apps Script</b>.</li>
+                <li>Go to <b>Extensions {'>'} Apps Script</b>.</li>
                 <li>Copy the code below and paste it in.</li>
-                <li>Click <b>Deploy > New Deployment</b>.</li>
+                <li>Click <b>Deploy {'>'} New Deployment</b>.</li>
                 <li>Select <b>Web App</b>. Ensure it is set to 'Execute as: Me' and 'Access: Anyone'.</li>
               </ol>
               <button 

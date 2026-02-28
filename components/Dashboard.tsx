@@ -161,7 +161,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         </button>
 
         {/* Receipts Manager Card - Visible to Owner and Manager */}
-        <button 
+        <button
           onClick={() => onNavigate('RECEIPTS_MANAGER')}
           className="w-full text-left bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-center gap-5 hover:border-emerald-300 hover:shadow-md transition-all active:scale-[0.98]"
         >
@@ -171,6 +171,23 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex-1">
             <h3 className="text-lg font-bold text-slate-800 text-sm">Receipts Manager</h3>
             <p className="text-xs font-medium text-slate-500 mt-1">{receipts.length} receipts stored</p>
+          </div>
+          <div className="text-slate-300">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </div>
+        </button>
+
+        {/* Inventory Manager Card - Visible to all users */}
+        <button
+          onClick={() => onNavigate('INVENTORY_MANAGER')}
+          className="w-full text-left bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-center gap-5 hover:border-teal-300 hover:shadow-md transition-all active:scale-[0.98]"
+        >
+          <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-600">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-slate-800 text-sm">Inventory Manager</h3>
+            <p className="text-xs font-medium text-slate-500 mt-1">Manage supply orders</p>
           </div>
           <div className="text-slate-300">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>

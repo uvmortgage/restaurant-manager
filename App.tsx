@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, Transaction, Receipt, CateringEvent, AppState, CloudConfig } from './types';
+import { Order } from './inventory-types';
 import { storageService } from './services/storageService';
 import { cloudService } from './services/cloudService';
 import PinPad from './components/PinPad';
@@ -16,22 +17,26 @@ import PaySalaryForm from './components/PaySalaryForm';
 import AddReceiptForm from './components/AddReceiptForm';
 import AddCateringForm from './components/AddCateringForm';
 import AddCateringPaymentForm from './components/AddCateringPaymentForm';
+import InventoryManager from './components/InventoryManager';
+import CreateOrderForm from './components/CreateOrderForm';
 
-type Screen = 
-  | 'LOGIN' 
-  | 'DASHBOARD' 
-  | 'CASH_MANAGER' 
-  | 'RECEIPTS_MANAGER' 
+type Screen =
+  | 'LOGIN'
+  | 'DASHBOARD'
+  | 'CASH_MANAGER'
+  | 'RECEIPTS_MANAGER'
   | 'CATERING_MANAGER'
   | 'USER_MANAGER'
   | 'ADD_USER'
   | 'EDIT_USER'
   | 'CLOUD_SETTINGS'
-  | 'ADD_CASH' 
-  | 'PAY_SALARY' 
+  | 'ADD_CASH'
+  | 'PAY_SALARY'
   | 'ADD_RECEIPT'
   | 'ADD_CATERING'
-  | 'ADD_CATERING_PAYMENT';
+  | 'ADD_CATERING_PAYMENT'
+  | 'INVENTORY_MANAGER'
+  | 'CREATE_ORDER';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -256,6 +261,10 @@ const App: React.FC = () => {
     setCurrentScreen('DASHBOARD');
   };
 
+  const handleOrderCreated = (_order: Order) => {
+    setCurrentScreen('INVENTORY_MANAGER');
+  };
+
   if (isInitializing) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
@@ -438,6 +447,22 @@ const App: React.FC = () => {
               />
             )}
           </div>
+        );
+      case 'INVENTORY_MANAGER':
+        return (
+          <InventoryManager
+            user={state.currentUser!}
+            onCreateOrder={() => setCurrentScreen('CREATE_ORDER')}
+            onBack={() => setCurrentScreen('DASHBOARD')}
+          />
+        );
+      case 'CREATE_ORDER':
+        return (
+          <CreateOrderForm
+            user={state.currentUser!}
+            onSubmit={handleOrderCreated}
+            onCancel={() => setCurrentScreen('INVENTORY_MANAGER')}
+          />
         );
       default:
         return null;
