@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { Product, Order, OrderItem, UnitOfMeasure, ProductCategory } from '../inventory-types';
+import { Product, Order, OrderLine } from '../inventory-types';
 import { fetchProducts, createOrder, createOrderLines } from '../services/inventoryService';
 
 interface SelectionState {
   selected: boolean;
   qtyDropdown: number;
   qtyOverride: string;
-  uomOverride: UnitOfMeasure | '';
+  unitOverride: string;
 }
 
 interface Props {
@@ -18,33 +18,11 @@ interface Props {
 
 const PRESET_QTYS = [1, 2, 3, 4, 5, 6, 10, 12, 24, 48];
 
-const UOM_OPTIONS: UnitOfMeasure[] = ['pcs', 'lbs', 'kg', 'bottles', 'pkts', 'cases', 'bags', 'boxes'];
-
-const CATEGORY_ORDER: ProductCategory[] = [
-  'Kitchen',
-  'Front of House',
-  'Crockery',
-  'Paper & Packaging',
-  'Sauces',
-  'Spices',
-  'Retail',
-];
-
-const CATEGORY_COLORS: Record<ProductCategory, string> = {
-  Kitchen: 'bg-orange-100 text-orange-700',
-  'Front of House': 'bg-blue-100 text-blue-700',
-  Crockery: 'bg-purple-100 text-purple-700',
-  'Paper & Packaging': 'bg-slate-100 text-slate-700',
-  Sauces: 'bg-red-100 text-red-700',
-  Spices: 'bg-amber-100 text-amber-700',
-  Retail: 'bg-emerald-100 text-emerald-700',
-};
-
 const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
-  const [selections, setSelections] = useState<Map<string, SelectionState>>(new Map());
+  const [selections, setSelections] = useState<Map<number, SelectionState>>(new Map());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,15 +37,9 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
     try {
       const data = await fetchProducts();
       setProducts(data);
-      // Initialize selections map
-      const initial = new Map<string, SelectionState>();
+      const initial = new Map<number, SelectionState>();
       data.forEach((p) => {
-        initial.set(p.id, {
-          selected: false,
-          qtyDropdown: p.min_order_qty > 0 ? Math.min(p.min_order_qty, PRESET_QTYS[0]) : 1,
-          qtyOverride: '',
-          uomOverride: '',
-        });
+        initial.set(p.id, { selected: false, qtyDropdown: 1, qtyOverride: '', unitOverride: '' });
       });
       setSelections(initial);
     } catch (e: any) {
@@ -77,34 +49,41 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
     }
   };
 
-  const updateSelection = (productId: string, patch: Partial<SelectionState>) => {
+  const updateSelection = (productId: number, patch: Partial<SelectionState>) => {
     setSelections((prev) => {
       const next = new Map(prev);
-      const current = next.get(productId);
-      if (current) next.set(productId, { ...current, ...patch });
+      const cur = next.get(productId);
+      if (cur) next.set(productId, { ...cur, ...patch });
       return next;
     });
   };
 
   const selectedCount = Array.from(selections.values()).filter((s) => s.selected).length;
 
-  const groupedProducts = CATEGORY_ORDER.reduce<Record<string, Product[]>>((acc, cat) => {
-    const inCat = products.filter((p) => p.category === cat);
-    if (inCat.length > 0) acc[cat] = inCat;
-    return acc;
-  }, {});
+  // Group products by category (sorted by sort_order then name)
+  const grouped: [string, Product[]][] = [];
+  const seen = new Set<string>();
+  const sorted = [...products].sort((a, b) => {
+    const ao = a.categories?.sort_order ?? 99;
+    const bo = b.categories?.sort_order ?? 99;
+    return ao !== bo ? ao - bo : a.name.localeCompare(b.name);
+  });
+  sorted.forEach((p) => {
+    const cat = p.categories?.name ?? 'Other';
+    if (!seen.has(cat)) { seen.add(cat); grouped.push([cat, []]); }
+    grouped.find(([c]) => c === cat)![1].push(p);
+  });
 
   const handleSubmit = async () => {
     if (!dueDate) { setError('Please select a due date.'); return; }
     if (selectedCount === 0) { setError('Select at least one product.'); return; }
 
-    // Validate selected products have qty
     for (const [pid, sel] of selections.entries()) {
       if (!sel.selected) continue;
       const qty = sel.qtyOverride ? parseFloat(sel.qtyOverride) : sel.qtyDropdown;
       if (!qty || qty <= 0) {
         const p = products.find((x) => x.id === pid);
-        setError(`Quantity for "${p?.name ?? pid}" must be greater than 0.`);
+        setError(`Quantity for "${p?.name ?? pid}" must be > 0.`);
         return;
       }
     }
@@ -114,18 +93,17 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
 
     try {
       const now = new Date().toISOString();
-
       const orderPayload: Omit<Order, 'id' | 'created_at' | 'updated_at'> = {
         due_date: dueDate,
         submitted_by: user.name,
         submitted_at: now,
-        status: 'Submitted',
+        status: 'SUBMITTED',
         notes: notes.trim() || undefined,
       };
 
       const newOrder = await createOrder(orderPayload);
 
-      const lines: Omit<OrderItem, 'id' | 'created_at' | 'updated_at'>[] = [];
+      const lines: Omit<OrderLine, 'id' | 'created_at'>[] = [];
       for (const [pid, sel] of selections.entries()) {
         if (!sel.selected) continue;
         const qty = sel.qtyOverride ? parseFloat(sel.qtyOverride) : sel.qtyDropdown;
@@ -134,8 +112,9 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
           order_id: newOrder.id,
           product_id: pid,
           product_name: product?.name,
-          quantity_ordered: qty,
-          uom_override: sel.uomOverride || undefined,
+          qty_ordered: qty,
+          unit: sel.unitOverride || product?.unit || undefined,
+          notes: undefined,
         });
       }
 
@@ -216,15 +195,14 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
           </div>
         ) : products.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-100 p-8 text-center">
-            <p className="text-slate-500 font-semibold text-sm">No active products found.</p>
-            <p className="text-slate-400 text-xs mt-1">Add products in the Supabase dashboard under ibgsc.products.</p>
+            <p className="text-slate-500 font-semibold text-sm">No active products found in the database.</p>
           </div>
         ) : (
-          Object.entries(groupedProducts).map(([category, catProducts]) => (
+          grouped.map(([category, catProducts]) => (
             <div key={category} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
               {/* Category Header */}
               <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
-                <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${CATEGORY_COLORS[category as ProductCategory]}`}>
+                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-teal-100 text-teal-700">
                   {category}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">{catProducts.length} items</span>
@@ -234,7 +212,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
               <div className="divide-y divide-slate-50">
                 {catProducts.map((product) => {
                   const sel = selections.get(product.id) ?? {
-                    selected: false, qtyDropdown: 1, qtyOverride: '', uomOverride: '',
+                    selected: false, qtyDropdown: 1, qtyOverride: '', unitOverride: '',
                   };
 
                   return (
@@ -242,7 +220,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
                       key={product.id}
                       className={`p-4 transition-colors ${sel.selected ? 'bg-teal-50/40' : ''}`}
                     >
-                      {/* Row 1: Checkbox + Name + Supplier */}
+                      {/* Row 1: Checkbox + Name + Vendor */}
                       <div className="flex items-start gap-3 mb-3">
                         <div className="pt-0.5">
                           <input
@@ -250,7 +228,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
                             id={`prod-${product.id}`}
                             checked={sel.selected}
                             onChange={(e) => updateSelection(product.id, { selected: e.target.checked })}
-                            className="w-5 h-5 rounded border-slate-300 text-teal-600 accent-teal-600 cursor-pointer"
+                            className="w-5 h-5 rounded border-slate-300 accent-teal-600 cursor-pointer"
                           />
                         </div>
                         <label htmlFor={`prod-${product.id}`} className="flex-1 cursor-pointer">
@@ -258,22 +236,19 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
                             {product.name}
                           </p>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded px-1.5 py-0.5">
-                              {product.supplier_name}
-                            </span>
-                            {product.case_size && (
-                              <span className="text-[10px] text-slate-400 font-medium">
-                                {product.case_size}
+                            {product.vendors?.name && (
+                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
+                                {product.vendors.name}
                               </span>
                             )}
-                            {product.sku && (
-                              <span className="text-[10px] text-slate-300">SKU: {product.sku}</span>
-                            )}
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              {product.unit}
+                            </span>
                           </div>
                         </label>
                       </div>
 
-                      {/* Row 2: Qty controls — only active when selected */}
+                      {/* Row 2: Qty controls */}
                       <div className={`ml-8 grid grid-cols-3 gap-2 transition-opacity ${sel.selected ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
                         {/* Qty Dropdown */}
                         <div>
@@ -309,27 +284,23 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
                           />
                         </div>
 
-                        {/* UOM Override */}
+                        {/* Unit Override */}
                         <div>
                           <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                            UOM
+                            Unit Override
                           </label>
-                          <select
-                            value={sel.uomOverride || product.unit_of_measure}
+                          <input
+                            type="text"
+                            value={sel.unitOverride || product.unit}
                             onChange={(e) =>
                               updateSelection(product.id, {
-                                uomOverride: e.target.value === product.unit_of_measure ? '' : (e.target.value as UnitOfMeasure),
+                                unitOverride: e.target.value === product.unit ? '' : e.target.value,
                               })
                             }
                             disabled={!sel.selected}
-                            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-                          >
-                            {UOM_OPTIONS.map((u) => (
-                              <option key={u} value={u}>
-                                {u}{u === product.unit_of_measure ? ' ✓' : ''}
-                              </option>
-                            ))}
-                          </select>
+                            placeholder={product.unit}
+                            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder:text-slate-300"
+                          />
                         </div>
                       </div>
                     </div>

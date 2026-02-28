@@ -1,14 +1,13 @@
 import { supabase } from './supabaseClient';
-import { Product, Order, OrderItem } from '../inventory-types';
+import { Product, Order, OrderLine } from '../inventory-types';
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
 export async function fetchProducts(): Promise<Product[]> {
   const { data, error } = await supabase
     .from('products')
-    .select('*')
+    .select('*, categories(name, sort_order), vendors(name, code)')
     .eq('is_active', true)
-    .order('category')
     .order('name');
 
   if (error) throw new Error(error.message);
@@ -42,7 +41,7 @@ export async function createOrder(
 
 // ── Order Lines ───────────────────────────────────────────────────────────────
 
-export async function fetchOrderLines(orderId: string): Promise<OrderItem[]> {
+export async function fetchOrderLines(orderId: number): Promise<OrderLine[]> {
   const { data, error } = await supabase
     .from('order_lines')
     .select('*')
@@ -50,11 +49,11 @@ export async function fetchOrderLines(orderId: string): Promise<OrderItem[]> {
     .order('created_at');
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as OrderItem[];
+  return (data ?? []) as OrderLine[];
 }
 
 export async function createOrderLines(
-  lines: Omit<OrderItem, 'id' | 'created_at' | 'updated_at'>[]
+  lines: Omit<OrderLine, 'id' | 'created_at'>[]
 ): Promise<void> {
   if (lines.length === 0) return;
   const { error } = await supabase.from('order_lines').insert(lines);

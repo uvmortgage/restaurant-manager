@@ -1,73 +1,66 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Inventory Order Management — Data Model
 // Inchin's Bamboo Garden, South Charlotte
-// Backed by Supabase (ibgsc schema)
+// Backed by Supabase ibgsc schema (integer serial IDs, normalized FKs)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Enumerations ─────────────────────────────────────────────────────────────
+// ── Reference / lookup tables ─────────────────────────────────────────────────
 
-export type ProductCategory =
-  | 'Kitchen'
-  | 'Front of House'
-  | 'Crockery'
-  | 'Paper & Packaging'
-  | 'Sauces'
-  | 'Spices'
-  | 'Retail';
-
-export type UnitOfMeasure = 'pcs' | 'lbs' | 'kg' | 'bottles' | 'pkts' | 'cases' | 'bags' | 'boxes';
-
-export type OrderStatus = 'Draft' | 'Submitted' | 'Approved' | 'Sent to Supplier';
-
-export type InventoryUserRole = 'Staff' | 'Manager' | 'Owner';
-
-// ── Master Data: Products ─────────────────────────────────────────────────────
-//
-// One row per orderable product. Maintained by Owner/Manager.
-// Staff never edit this table — they only read it when building an order.
-
-export interface Product {
-  id: string;                       // UUID
-  name: string;                     // e.g. "Spring Roll Wrapper"
-  category: ProductCategory;        // drives grouping in the order form
-  sku: string;                      // supplier's SKU / item code
-  case_size: string;                // human-readable, e.g. "30 pcs/case"
-  unit_of_measure: UnitOfMeasure;   // base unit used when entering quantity
-  min_order_qty: number;            // default = 1
-  supplier_name: string;            // e.g. "US Foods", "RD"
-  is_active: boolean;               // soft-delete; inactive items hidden from order form
-  notes?: string;                   // optional manager notes about the product
-  created_at: string;               // ISO 8601 timestamp
-  updated_at: string;
+export interface Category {
+  id: number;
+  name: string;          // e.g. "PRODUCE", "MEATS", "SEA FOOD"
+  sort_order: number;
+  created_at: string;
 }
 
-// ── Master Data: Inventory Users ──────────────────────────────────────────────
+export interface Vendor {
+  id: number;
+  code: string;          // short code e.g. "RD", "WALMART"
+  name: string;          // e.g. "Restaurant Depot"
+  phone?: string;
+  email?: string;
+  notes?: string;
+  is_active: boolean;
+  cutoff_day?: string;   // e.g. "MONDAY"
+  cutoff_time?: string;  // e.g. "12:00:00"
+  created_at: string;
+}
 
-export interface InventoryUserProfile {
-  user_id: string;                  // FK → User.id (existing users table)
-  inventory_role: InventoryUserRole;
-  assigned_category?: ProductCategory;
+// ── Products ──────────────────────────────────────────────────────────────────
+//
+// One row per orderable product.
+// category_id → ibgsc.categories; vendor_id → ibgsc.vendors
+
+export interface Product {
+  id: number;                       // integer serial
+  name: string;
+  category_id: number;              // FK → categories.id
+  vendor_id: number;                // FK → vendors.id
+  unit: string;                     // unit of measure, e.g. "lbs", "pcs", "bunch"
+  is_active: boolean;
+  notes?: string;
+  created_at: string;
+
+  // Joined fields — populated when using select('*, categories(name), vendors(name)')
+  categories?: { name: string; sort_order?: number };
+  vendors?: { name: string; code?: string };
 }
 
 // ── Orders ────────────────────────────────────────────────────────────────────
-//
-// One Order covers all categories for a given due date.
-// Multiple order lines (one per product) are linked via order_id.
+
+export type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'SENT';
 
 export interface Order {
-  id: string;                       // UUID
-  due_date: string;                 // ISO date string (YYYY-MM-DD) — when supplier needs it by
-
-  // Submission
-  submitted_by: string;             // User name (denormalised for display)
-  submitted_at: string;             // ISO 8601 timestamp
-  status: OrderStatus;
-
-  // Manager actions
-  approved_by?: string;
-  approved_at?: string;
-  sent_at?: string;
-
+  id: number;                       // integer serial
+  order_date?: string;              // DATE — auto-set to CURRENT_DATE by DB default
+  due_date: string;                 // ISO date YYYY-MM-DD — when supplier needs it
+  status: OrderStatus | string;     // default 'DRAFT'
+  submitted_by?: string;            // display name (denormalised TEXT column)
+  submitted_by_id?: number;         // FK → ibgsc.users.id
+  placed_by_id?: number;
+  closed_by_id?: number;
+  closed_at?: string;
+  submitted_at?: string;
   notes?: string;
   created_at: string;
   updated_at: string;
@@ -75,48 +68,20 @@ export interface Order {
 
 // ── Order Lines ───────────────────────────────────────────────────────────────
 //
-// One row per product line within an Order.
-// Staff set quantity_ordered; manager can override with quantity_approved.
-// uom_override allows ordering in a unit different from product.unit_of_measure.
+// One row per product in an order.
+// qty_ordered = staff-entered; qty_adjusted = manager override; qty_shipped = actual.
 
-export interface OrderItem {
-  id: string;                       // UUID
-  order_id: string;                 // FK → Order.id
-  product_id: string;               // FK → Product.id
-  product_name?: string;            // denormalised for display
-
-  // Staff-entered
-  quantity_ordered: number;
-  uom_override?: UnitOfMeasure;     // if set, overrides product.unit_of_measure
-  staff_notes?: string;
-
-  // Manager-entered (set during Approve step)
-  quantity_approved?: number;
-  manager_notes?: string;
-
+export interface OrderLine {
+  id: number;                       // integer serial
+  order_id: number;                 // FK → orders.id
+  product_id: number;               // FK → products.id
+  qty_ordered: number;
+  unit?: string;                    // UOM override for this line (overrides product.unit)
+  notes?: string;                   // staff notes
+  qty_adjusted?: number;            // manager-approved override qty
+  qty_shipped?: number;
   created_at: string;
-  updated_at: string;
-}
 
-// ── Derived / View Types ──────────────────────────────────────────────────────
-
-export interface OrderWithLines {
-  order: Order;
-  lines: OrderItem[];
-}
-
-export interface WeekOrderSummary {
-  due_date: string;
-  total_orders: number;
-  pending_approval: number;
-  status: OrderStatus;
-}
-
-// ── App State ─────────────────────────────────────────────────────────────────
-
-export interface InventoryAppState {
-  products: Product[];
-  orders: Order[];
-  orderItems: OrderItem[];
-  inventoryProfiles: InventoryUserProfile[];
+  // Joined for display
+  product_name?: string;
 }

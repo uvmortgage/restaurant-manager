@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { Order, OrderStatus } from '../inventory-types';
+import { Order } from '../inventory-types';
 import { fetchOrders, fetchOrderLines } from '../services/inventoryService';
+
+type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'SENT';
 
 interface Props {
   user: User;
@@ -9,11 +11,11 @@ interface Props {
   onBack: () => void;
 }
 
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  Draft: 'bg-slate-100 text-slate-600',
-  Submitted: 'bg-amber-100 text-amber-700',
-  Approved: 'bg-emerald-100 text-emerald-700',
-  'Sent to Supplier': 'bg-blue-100 text-blue-700',
+const STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'bg-slate-100 text-slate-600',
+  SUBMITTED: 'bg-amber-100 text-amber-700',
+  APPROVED: 'bg-emerald-100 text-emerald-700',
+  SENT: 'bg-blue-100 text-blue-700',
 };
 
 const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onBack }) => {
@@ -34,7 +36,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onBack }) => {
       const withCounts = await Promise.all(
         data.map(async (o) => {
           try {
-            const lines = await fetchOrderLines(o.id);
+            const lines = await fetchOrderLines(Number(o.id));
             return { ...o, line_count: lines.length };
           } catch {
             return { ...o, line_count: 0 };
@@ -130,9 +132,11 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onBack }) => {
                   <p className="text-slate-800 font-bold text-sm">
                     Due: {formatDate(order.due_date)}
                   </p>
-                  <p className="text-slate-500 text-xs mt-0.5">
-                    By {order.submitted_by}
-                  </p>
+                  {order.submitted_by && (
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      By {order.submitted_by}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-2xl font-black text-teal-600">{order.line_count ?? 0}</p>
