@@ -1,0 +1,79 @@
+
+export type UserRole = 'Manager' | 'Dish Washer' | 'Food Runner' | 'Front Staff' | 'Owner';
+
+export interface User {
+  id: string;
+  name: string;
+  role: UserRole;
+  pin: string;
+  status: 'Active' | 'Inactive';
+  photo?: string;
+}
+
+export type TransactionType = 'Income' | 'Expense';
+
+export type IncomeCategory = 'Catering Order' | 'Daily Drawer' | 'ATM Withdrawal/Outside';
+export type ExpenseCategory = 'Salary Payment';
+
+export type TransactionCategory = IncomeCategory | ExpenseCategory;
+
+export interface Transaction {
+  id: string;
+  timestamp: string;
+  trans_type: TransactionType;
+  category: TransactionCategory;
+  amount: number;
+  logged_by: string;
+  payee_name?: string;
+  reference_details?: string;
+  fund_source: 'Pool' | 'Cash';
+  signature?: string;
+  receipt_photo?: string;
+}
+
+export type ReceiptCategory = 'RD' | 'Walmart' | 'Indian' | 'Chinese' | 'Other';
+
+export interface Receipt {
+  id: string;
+  timestamp: string;
+  category: ReceiptCategory;
+  vendor_name?: string;
+  amount: number;
+  photo: string;
+  logged_by: string;
+  status: 'Synced' | 'Pending';
+}
+
+export type PaymentMethod = 'Cash' | 'Zelle' | 'Card';
+
+export interface CateringEvent {
+  id: string;
+  timestamp: string;
+  event_date: string;
+  ordering_person_name: string;
+  phone_number?: string;
+  photo?: string;
+  status: 'Booked' | 'Paid';
+  payment_method?: PaymentMethod;
+  amount?: number;
+  payer_name?: string;
+  payment_timestamp?: string;
+  logged_by: string;
+  payment_logged_by?: string;
+}
+
+export interface CloudConfig {
+  syncUrl: string;
+  apiKey: string;
+  lastSyncedAt?: string;
+}
+
+export interface AppState {
+  currentUser: User | null;
+  transactions: Transaction[];
+  receipts: Receipt[];
+  cateringEvents: CateringEvent[];
+  users: User[];
+  cloudConfig: CloudConfig | null;
+  isSyncing: boolean;
+}

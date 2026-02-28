@@ -1,0 +1,7 @@
+{
+  "name": "Restaurant Manager",
+  "description": "A robust mobile-first application for catering businesses to manage shared cash pools, track incoming orders, and log staff salary payments with digital signatures.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
