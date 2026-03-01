@@ -150,11 +150,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
 
   // ── New order handler ──────────────────────────────────────────────────────
   const handleNewOrder = () => {
-    if (typeFilter !== 'ALL') {
-      onCreateOrder(typeFilter as OrderType);
-    } else {
-      setShowTypePickerFor(true);
-    }
+    setShowTypePickerFor(true);
   };
 
   // ── Product handlers ───────────────────────────────────────────────────────
