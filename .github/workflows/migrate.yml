@@ -2,6 +2,9 @@ name: Run DB Migration
 
 on:
   workflow_dispatch:
+  push:
+    branches: ["claude/understand-repo-XsHjD"]
+    paths: ["migrations/**", ".github/workflows/migrate.yml"]
 
 jobs:
   migrate:
