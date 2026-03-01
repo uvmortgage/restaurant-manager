@@ -21,13 +21,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 const PROJECT_REF = 'qnpnisokvcsiysiakayr';
 
-// Supabase session pooler regions to try in order (all are IPv4-accessible).
+// Supabase pooler regions to try in order (all are IPv4-accessible).
 // Direct DB host (db.<ref>.supabase.co) is IPv6-only on newer projects.
 const POOLER_REGIONS = [
   'us-east-1',
   'us-west-1',
+  'eu-west-1',
   'eu-central-1',
   'ap-southeast-1',
+  'ap-northeast-1',
 ];
 
 function buildConnectionConfigs(password) {
@@ -38,15 +40,14 @@ function buildConnectionConfigs(password) {
   const region = process.env.SUPABASE_DB_REGION;
   const regions = region ? [region] : POOLER_REGIONS;
 
-  const configs = regions.map((r) => ({
-    host: `aws-0-${r}.pooler.supabase.com`,
-    port: 5432,
-    user: `postgres.${PROJECT_REF}`,
-    password,
-    database: 'postgres',
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 10000,
-  }));
+  const configs = [];
+  for (const r of regions) {
+    const host = `aws-0-${r}.pooler.supabase.com`;
+    const base = { host, user: `postgres.${PROJECT_REF}`, password, database: 'postgres', ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 8000 };
+    // Try session mode (5432) then transaction mode (6543) per region
+    configs.push({ ...base, port: 5432 });
+    configs.push({ ...base, port: 6543 });
+  }
 
   // Also append the direct host as last resort (works if runner has IPv6).
   configs.push({
