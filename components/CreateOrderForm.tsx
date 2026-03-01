@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { Product, Order, OrderLine } from '../inventory-types';
+import { Product, Order, OrderLine, Vendor } from '../inventory-types';
 import { fetchProducts, fetchVendors, createOrder, createOrderLines, updateProductVendor } from '../services/inventoryService';
-import { Vendor } from '../inventory-types';
 
 interface SelectionState {
   selected: boolean;
   qtyDropdown: number;
   qtyOverride: string;
   unitOverride: string;
+}
+
+// Vendor override per product: vendorId to use, and whether to save it permanently
+interface VendorOverride {
+  vendorId: number;
+  permanent: boolean;
 }
 
 interface Props {
@@ -30,8 +35,8 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
   const [vendorFilter, setVendorFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [allVendors, setAllVendors] = useState<Vendor[]>([]);
-  // productId → vendorId override (to save back to master product list)
-  const [vendorOverrides, setVendorOverrides] = useState<Map<number, number>>(new Map());
+  // productId → { vendorId, permanent }
+  const [vendorOverrides, setVendorOverrides] = useState<Map<number, VendorOverride>>(new Map());
 
   useEffect(() => {
     loadProducts();
@@ -56,10 +61,6 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
     }
   };
 
-  const setVendorOverride = (productId: number, vendorId: number) => {
-    setVendorOverrides((prev) => new Map(prev).set(productId, vendorId));
-  };
-
   const updateSelection = (productId: number, patch: Partial<SelectionState>) => {
     setSelections((prev) => {
       const next = new Map(prev);
@@ -67,6 +68,14 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
       if (cur) next.set(productId, { ...cur, ...patch });
       return next;
     });
+  };
+
+  const setVendorOverride = (productId: number, vendorId: number, permanent: boolean) => {
+    setVendorOverrides((prev) => new Map(prev).set(productId, { vendorId, permanent }));
+  };
+
+  const clearVendorOverride = (productId: number) => {
+    setVendorOverrides((prev) => { const next = new Map(prev); next.delete(productId); return next; });
   };
 
   const selectedCount = Array.from(selections.values()).filter((s) => s.selected).length;
@@ -113,11 +122,14 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
     setError(null);
 
     try {
-      const now = new Date().toISOString();
+      // Save permanent vendor changes first
+      const permanentChanges = [...vendorOverrides.entries()].filter(([, ov]) => ov.permanent);
+      await Promise.all(permanentChanges.map(([pid, ov]) => updateProductVendor(pid, ov.vendorId)));
+
       const orderPayload: Omit<Order, 'id' | 'created_at' | 'updated_at'> = {
         due_date: dueDate,
         submitted_by: user.name,
-        submitted_at: now,
+        submitted_at: new Date().toISOString(),
         status: 'SUBMITTED',
         notes: notes.trim() || undefined,
       };
@@ -132,7 +144,6 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
         lines.push({
           order_id: newOrder.id,
           product_id: pid,
-          product_name: product?.name,
           qty_ordered: qty,
           unit: sel.unitOverride || product?.unit || undefined,
           notes: undefined,
@@ -267,13 +278,18 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
                   const sel = selections.get(product.id) ?? {
                     selected: false, qtyDropdown: 1, qtyOverride: '', unitOverride: '',
                   };
+                  const vendorOv = vendorOverrides.get(product.id);
+                  const effectiveVendorId = vendorOv?.vendorId ?? product.vendor_id;
+                  const effectiveVendorName = vendorOv
+                    ? allVendors.find((v) => v.id === vendorOv.vendorId)?.name
+                    : product.vendors?.name;
 
                   return (
                     <div
                       key={product.id}
                       className={`p-4 transition-colors ${sel.selected ? 'bg-teal-50/40' : ''}`}
                     >
-                      {/* Row 1: Checkbox + Name + Vendor */}
+                      {/* Row 1: Checkbox + Name + Vendor badge */}
                       <div className="flex items-start gap-3 mb-3">
                         <div className="pt-0.5">
                           <input
@@ -289,73 +305,113 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
                             {product.name}
                           </p>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            {product.vendors?.name && (
-                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
-                                {product.vendors.name}
-                              </span>
-                            )}
-                            <span className="text-[10px] text-slate-400 font-medium">
-                              {product.unit}
+                            <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 ${vendorOv ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {effectiveVendorName ?? '—'}
+                              {vendorOv && !vendorOv.permanent && ' · order only'}
+                              {vendorOv && vendorOv.permanent && ' · permanent'}
                             </span>
+                            <span className="text-[10px] text-slate-400 font-medium">{product.unit}</span>
                           </div>
                         </label>
                       </div>
 
-                      {/* Row 2: Qty controls */}
-                      <div className={`ml-8 grid grid-cols-3 gap-2 transition-opacity ${sel.selected ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
-                        {/* Qty Dropdown */}
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                            Qty
-                          </label>
-                          <select
-                            value={sel.qtyDropdown}
-                            onChange={(e) => updateSelection(product.id, { qtyDropdown: Number(e.target.value) })}
-                            disabled={!sel.selected}
-                            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-                          >
-                            {PRESET_QTYS.map((q) => (
-                              <option key={q} value={q}>{q}</option>
-                            ))}
-                          </select>
-                        </div>
+                      {/* Expanded controls — only when selected */}
+                      {sel.selected && (
+                        <div className="ml-8 space-y-3">
+                          {/* Qty controls */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">Qty</label>
+                              <select
+                                value={sel.qtyDropdown}
+                                onChange={(e) => updateSelection(product.id, { qtyDropdown: Number(e.target.value) })}
+                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                              >
+                                {PRESET_QTYS.map((q) => <option key={q} value={q}>{q}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">Override Qty</label>
+                              <input
+                                type="number"
+                                min="0.01"
+                                step="0.5"
+                                value={sel.qtyOverride}
+                                onChange={(e) => updateSelection(product.id, { qtyOverride: e.target.value })}
+                                placeholder="Custom"
+                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder:text-slate-300"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">Unit Override</label>
+                              <input
+                                type="text"
+                                value={sel.unitOverride || product.unit}
+                                onChange={(e) =>
+                                  updateSelection(product.id, {
+                                    unitOverride: e.target.value === product.unit ? '' : e.target.value,
+                                  })
+                                }
+                                placeholder={product.unit}
+                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder:text-slate-300"
+                              />
+                            </div>
+                          </div>
 
-                        {/* Override Qty */}
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                            Override Qty
-                          </label>
-                          <input
-                            type="number"
-                            min="0.01"
-                            step="0.5"
-                            value={sel.qtyOverride}
-                            onChange={(e) => updateSelection(product.id, { qtyOverride: e.target.value })}
-                            disabled={!sel.selected}
-                            placeholder="Custom"
-                            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder:text-slate-300"
-                          />
-                        </div>
+                          {/* Supplier change */}
+                          {allVendors.length > 0 && (
+                            <div className="border border-slate-200 rounded-xl p-3 bg-white space-y-2">
+                              <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">
+                                Change Supplier
+                              </label>
+                              <select
+                                value={effectiveVendorId}
+                                onChange={(e) => {
+                                  const newId = Number(e.target.value);
+                                  if (newId === product.vendor_id) {
+                                    clearVendorOverride(product.id);
+                                  } else {
+                                    setVendorOverride(product.id, newId, vendorOv?.permanent ?? false);
+                                  }
+                                }}
+                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                              >
+                                {allVendors.map((v) => (
+                                  <option key={v.id} value={v.id}>{v.name}</option>
+                                ))}
+                              </select>
 
-                        {/* Unit Override */}
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                            Unit Override
-                          </label>
-                          <input
-                            type="text"
-                            value={sel.unitOverride || product.unit}
-                            onChange={(e) =>
-                              updateSelection(product.id, {
-                                unitOverride: e.target.value === product.unit ? '' : e.target.value,
-                              })
-                            }
-                            disabled={!sel.selected}
-                            placeholder={product.unit}
-                            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder:text-slate-300"
-                          />
+                              {/* Only show save options if vendor was actually changed */}
+                              {vendorOv && (
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setVendorOverride(product.id, vendorOv.vendorId, false)}
+                                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-colors ${
+                                      !vendorOv.permanent
+                                        ? 'bg-amber-500 text-white border-amber-500'
+                                        : 'bg-white text-slate-500 border-slate-200'
+                                    }`}
+                                  >
+                                    This order only
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setVendorOverride(product.id, vendorOv.vendorId, true)}
+                                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-colors ${
+                                      vendorOv.permanent
+                                        ? 'bg-teal-600 text-white border-teal-600'
+                                        : 'bg-white text-slate-500 border-slate-200'
+                                    }`}
+                                  >
+                                    Save permanently
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
