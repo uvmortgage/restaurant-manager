@@ -260,12 +260,6 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     }
   };
 
-  const filteredProducts = products.filter((p) => {
-    if (prodSearch && !p.name.toLowerCase().includes(prodSearch.toLowerCase())) return false;
-    if (prodCategoryFilter !== 'ALL' && p.category_id !== prodCategoryFilter) return false;
-    return true;
-  });
-
   // Build category id → order_type map for fast lookup
   const catOrderTypeMap = useMemo(() => {
     const m: Record<number, string> = {};
@@ -273,18 +267,23 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     return m;
   }, [categories]);
 
+  const filteredProducts = products.filter((p) => {
+    if (prodSearch && !p.name.toLowerCase().includes(prodSearch.toLowerCase())) return false;
+    if (prodCategoryFilter !== 'ALL' && p.category_id !== prodCategoryFilter) return false;
+    if (prodTypeFilter !== 'ALL') {
+      const ot = p.categories?.order_type ?? catOrderTypeMap[p.category_id] ?? 'WEEKLY_FOOD';
+      if (ot !== prodTypeFilter) return false;
+    }
+    return true;
+  });
+
   // Group products: order_type → category_name → products[]
   const groupedProducts = useMemo(() => {
     const typeOrder: OrderType[] = ['WEEKLY_FOOD', 'BAR', 'IBG'];
     const groups: Record<string, { catSortOrder: number; products: Product[] }[]> = {};
 
-    const visible = filteredProducts.filter((p) => {
-      const ot = p.categories?.order_type ?? catOrderTypeMap[p.category_id] ?? 'WEEKLY_FOOD';
-      return prodTypeFilter === 'ALL' || ot === prodTypeFilter;
-    });
-
     typeOrder.forEach((ot) => {
-      const forType = visible.filter((p) => {
+      const forType = filteredProducts.filter((p) => {
         const pot = p.categories?.order_type ?? catOrderTypeMap[p.category_id] ?? 'WEEKLY_FOOD';
         return pot === ot;
       });
@@ -306,7 +305,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     });
 
     return groups;
-  }, [filteredProducts, catOrderTypeMap, prodTypeFilter]);
+  }, [filteredProducts, catOrderTypeMap]);
 
   // Categories shown as filter pills (based on selected order type)
   const categoryPills = useMemo(() => {
