@@ -62,18 +62,10 @@ export interface CateringEvent {
   payment_logged_by?: string;
 }
 
-export interface CloudConfig {
-  syncUrl: string;
-  apiKey: string;
-  lastSyncedAt?: string;
-}
-
 export interface AppState {
   currentUser: User | null;
   transactions: Transaction[];
   receipts: Receipt[];
   cateringEvents: CateringEvent[];
   users: User[];
-  cloudConfig: CloudConfig | null;
-  isSyncing: boolean;
 }
