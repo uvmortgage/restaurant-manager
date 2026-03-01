@@ -110,3 +110,21 @@ export async function submitOrder(orderId: number, submittedBy: string): Promise
     .eq('id', orderId);
   if (error) throw new Error(error.message);
 }
+
+export async function deleteOrderLine(lineId: number): Promise<void> {
+  const { error } = await supabase
+    .from('order_lines')
+    .delete()
+    .eq('id', lineId);
+  if (error) throw new Error(error.message);
+}
+
+export async function updateOrderLine(lineId: number, qty: number, unit?: string): Promise<void> {
+  const patch: Record<string, unknown> = { qty_ordered: qty };
+  if (unit !== undefined) patch.unit = unit;
+  const { error } = await supabase
+    .from('order_lines')
+    .update(patch)
+    .eq('id', lineId);
+  if (error) throw new Error(error.message);
+}

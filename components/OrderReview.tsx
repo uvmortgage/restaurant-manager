@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { Order, OrderLineDetail } from '../inventory-types';
-import { fetchOrderLinesWithProducts, submitOrder } from '../services/inventoryService';
+import { Order, OrderLineDetail, Product } from '../inventory-types';
+import {
+  fetchOrderLinesWithProducts,
+  submitOrder,
+  deleteOrderLine,
+  updateOrderLine,
+  createOrderLines,
+  fetchProducts,
+} from '../services/inventoryService';
 
 interface Props {
   user: User;
@@ -10,22 +17,11 @@ interface Props {
   onSubmitted: () => void;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'bg-slate-100 text-slate-600',
-  SUBMITTED: 'bg-amber-100 text-amber-700',
-  APPROVED: 'bg-emerald-100 text-emerald-700',
-  SENT: 'bg-blue-100 text-blue-700',
-};
+// ── Canvas helpers ────────────────────────────────────────────────────────────
 
-// ── Canvas image generator ────────────────────────────────────────────────────
-
-function drawRoundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number, y: number, w: number, h: number, r: number
-) {
+function drawRR(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
   ctx.quadraticCurveTo(x + w, y, x + w, y + r);
   ctx.lineTo(x + w, y + h - r);
   ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
@@ -42,216 +38,155 @@ function fmtDate(iso: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function makeVendorGroups(lines: OrderLineDetail[]): [string, OrderLineDetail[]][] {
+  const map = new Map<string, OrderLineDetail[]>();
+  for (const l of lines) {
+    const k = l.vendor_name ?? 'Other';
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(l);
+  }
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
 async function generateOrderImage(
   order: Order,
   lines: OrderLineDetail[],
-  grouped: [string, OrderLineDetail[]][]
+  groups: [string, OrderLineDetail[]][]
 ): Promise<File> {
-  const DPR = 2;
-  const W = 800;
+  const DPR = 2, W = 800;
+  const H_HDR = 130, H_META = 56, H_VND = 40, H_ITEM = 54, H_FOOT = 60, PAD = 16;
+  const bodyH = PAD + groups.reduce((s, [, g]) => s + H_VND + g.length * H_ITEM + 8, 0) + PAD;
+  const TH = H_HDR + H_META + bodyH + H_FOOT;
 
-  const HEADER_H = 130;
-  const META_H   = 56;
-  const CAT_H    = 38;
-  const ITEM_H   = 54;
-  const FOOTER_H = 60;
-  const PAD      = 20;
-
-  const bodyH  = PAD + grouped.length * CAT_H + lines.length * ITEM_H + PAD;
-  const totalH = HEADER_H + META_H + bodyH + FOOTER_H;
-
-  const canvas  = document.createElement('canvas');
-  canvas.width  = W * DPR;
-  canvas.height = totalH * DPR;
-  const ctx     = canvas.getContext('2d')!;
+  const canvas = document.createElement('canvas');
+  canvas.width = W * DPR; canvas.height = TH * DPR;
+  const ctx = canvas.getContext('2d')!;
   ctx.scale(DPR, DPR);
 
-  // ── Background ──────────────────────────────────────────────────────────────
-  ctx.fillStyle = '#f8fafc';
-  ctx.fillRect(0, 0, W, totalH);
+  ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, W, TH);
 
-  // ── Header ──────────────────────────────────────────────────────────────────
-  // Gradient
-  const grad = ctx.createLinearGradient(0, 0, W, HEADER_H);
-  grad.addColorStop(0, '#0d9488');
-  grad.addColorStop(1, '#0f766e');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, HEADER_H);
-
-  // Decorative circle
+  // Header
+  const grad = ctx.createLinearGradient(0, 0, W, H_HDR);
+  grad.addColorStop(0, '#0d9488'); grad.addColorStop(1, '#0f766e');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H_HDR);
   ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.beginPath();
-  ctx.arc(W - 60, 30, 90, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(W - 60, 30, 90, 0, Math.PI * 2); ctx.fill();
 
-  // "INVENTORY ORDER"
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 30px system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 30px system-ui,sans-serif';
   ctx.fillText('INVENTORY ORDER', 36, 52);
+  ctx.fillStyle = '#99f6e4'; ctx.font = '600 12px system-ui,sans-serif';
+  ctx.fillText("RESTOHUB · INCHIN'S BAMBOO GARDEN", 36, 74);
 
-  // Sub-label
-  ctx.fillStyle = '#99f6e4';
-  ctx.font = '600 12px system-ui, sans-serif';
-  ctx.fillText('RESTOHUB · INCHIN\'S BAMBOO GARDEN', 36, 76);
+  const stxt = (order.status as string).toUpperCase();
+  ctx.font = 'bold 11px system-ui,sans-serif';
+  const sw = ctx.measureText(stxt).width + 28;
+  ctx.fillStyle = 'rgba(255,255,255,0.22)'; drawRR(ctx, W - sw - 28, 16, sw, 26, 13); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText(stxt, W - 28 - sw / 2, 33); ctx.textAlign = 'left';
 
-  // Status pill
-  const statusText = (order.status as string).toUpperCase();
-  ctx.font = 'bold 11px system-ui, sans-serif';
-  const statusW = ctx.measureText(statusText).width + 28;
-  ctx.fillStyle = 'rgba(255,255,255,0.22)';
-  drawRoundRect(ctx, W - statusW - 28, 16, statusW, 26, 13);
-  ctx.fill();
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.fillText(statusText, W - 28 - statusW / 2, 33);
-  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ccfbf1'; ctx.font = '600 14px system-ui,sans-serif';
+  ctx.fillText(`Due: ${fmtDate(order.due_date)}   ·   ${lines.length} item${lines.length !== 1 ? 's' : ''}`, 36, 108);
 
-  // Due date + item count
-  ctx.fillStyle = '#ccfbf1';
-  ctx.font = '600 14px system-ui, sans-serif';
-  ctx.fillText(
-    `Due: ${fmtDate(order.due_date)}   ·   ${lines.length} item${lines.length !== 1 ? 's' : ''}`,
-    36, 108
-  );
+  // Meta
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, H_HDR, W, H_META);
+  ctx.fillStyle = '#64748b'; ctx.font = '600 12px system-ui,sans-serif';
+  ctx.fillText('Submitted by', 36, H_HDR + 20);
+  ctx.fillStyle = '#1e293b'; ctx.font = 'bold 14px system-ui,sans-serif';
+  ctx.fillText(order.submitted_by ?? '—', 36, H_HDR + 40);
+  ctx.fillStyle = '#e2e8f0'; ctx.fillRect(0, H_HDR + H_META - 1, W, 1);
 
-  // ── Meta row ─────────────────────────────────────────────────────────────────
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, HEADER_H, W, META_H);
-  ctx.fillStyle = '#64748b';
-  ctx.font = '600 12px system-ui, sans-serif';
-  ctx.fillText(`Submitted by`, 36, HEADER_H + 22);
-  ctx.fillStyle = '#1e293b';
-  ctx.font = 'bold 13px system-ui, sans-serif';
-  ctx.fillText(order.submitted_by ?? '—', 36, HEADER_H + 40);
+  // Vendor groups
+  let y = H_HDR + H_META + PAD;
+  for (const [vendor, vls] of groups) {
+    ctx.fillStyle = '#f0fdfa'; ctx.fillRect(0, y, W, H_VND);
+    ctx.font = 'bold 13px system-ui,sans-serif';
+    const vw = ctx.measureText(vendor).width + 28;
+    ctx.fillStyle = '#0d9488'; drawRR(ctx, 36, y + 8, vw, 24, 12); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(vendor, 50, y + 24);
+    ctx.fillStyle = '#94a3b8'; ctx.font = '500 11px system-ui,sans-serif';
+    ctx.fillText(`${vls.length} item${vls.length !== 1 ? 's' : ''}`, 36 + vw + 10, y + 24);
+    ctx.fillStyle = '#e2e8f0'; ctx.fillRect(0, y + H_VND - 1, W, 1);
+    y += H_VND;
 
-  if (order.notes) {
-    ctx.fillStyle = '#92400e';
-    ctx.font = '500 12px system-ui, sans-serif';
-    ctx.fillText(`Note: ${order.notes}`, 300, HEADER_H + 34);
-  }
-
-  // Separator
-  ctx.fillStyle = '#e2e8f0';
-  ctx.fillRect(0, HEADER_H + META_H - 1, W, 1);
-
-  // ── Item rows ────────────────────────────────────────────────────────────────
-  let y = HEADER_H + META_H + PAD;
-
-  for (const [category, catLines] of grouped) {
-    // Category header
-    ctx.fillStyle = '#f0fdfa';
-    ctx.fillRect(0, y, W, CAT_H);
-
-    ctx.font = 'bold 11px system-ui, sans-serif';
-    const cpw = ctx.measureText(category).width + 24;
-    ctx.fillStyle = '#ccfbf1';
-    drawRoundRect(ctx, 36, y + 8, cpw, 22, 11);
-    ctx.fill();
-    ctx.fillStyle = '#0f766e';
-    ctx.fillText(category, 48, y + 23);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '500 11px system-ui, sans-serif';
-    ctx.fillText(
-      `${catLines.length} item${catLines.length !== 1 ? 's' : ''}`,
-      36 + cpw + 10, y + 23
-    );
-
-    ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(0, y + CAT_H - 1, W, 1);
-    y += CAT_H;
-
-    for (let i = 0; i < catLines.length; i++) {
-      const line = catLines[i];
-
-      ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#fafafa';
-      ctx.fillRect(0, y, W, ITEM_H);
-
-      // Product name
-      ctx.fillStyle = '#1e293b';
-      ctx.font = 'bold 14px system-ui, sans-serif';
-      ctx.fillText(line.product_name, 36, y + 20);
-
-      // Vendor badge
-      if (line.vendor_name) {
-        ctx.font = '600 10px system-ui, sans-serif';
-        const vw = ctx.measureText(line.vendor_name).width + 16;
-        ctx.fillStyle = '#f1f5f9';
-        drawRoundRect(ctx, 36, y + 27, vw, 18, 9);
-        ctx.fill();
-        ctx.fillStyle = '#64748b';
-        ctx.fillText(line.vendor_name, 44, y + 39);
+    for (let i = 0; i < vls.length; i++) {
+      const l = vls[i];
+      ctx.fillStyle = i % 2 === 0 ? '#fff' : '#fafafa'; ctx.fillRect(0, y, W, H_ITEM);
+      ctx.fillStyle = '#1e293b'; ctx.font = 'bold 14px system-ui,sans-serif';
+      ctx.fillText(l.product_name, 36, y + 20);
+      if (l.category_name) {
+        ctx.font = 'bold 10px system-ui,sans-serif';
+        const cw = ctx.measureText(l.category_name).width + 16;
+        ctx.fillStyle = '#ccfbf1'; drawRR(ctx, 36, y + 28, cw, 16, 8); ctx.fill();
+        ctx.fillStyle = '#0f766e'; ctx.fillText(l.category_name, 44, y + 40);
       }
-
-      // Qty
-      ctx.fillStyle = '#0d9488';
-      ctx.font = 'bold 22px system-ui, sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText(String(line.qty_ordered), W - 90, y + 26);
-
-      // Unit
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '500 11px system-ui, sans-serif';
-      ctx.fillText(line.unit ?? '', W - 36, y + 26);
-      ctx.textAlign = 'left';
-
-      // Row rule
-      ctx.fillStyle = '#f1f5f9';
-      ctx.fillRect(36, y + ITEM_H - 1, W - 72, 1);
-      y += ITEM_H;
+      ctx.fillStyle = '#0d9488'; ctx.font = 'bold 22px system-ui,sans-serif';
+      ctx.textAlign = 'right'; ctx.fillText(String(l.qty_ordered), W - 90, y + 26);
+      ctx.fillStyle = '#94a3b8'; ctx.font = '500 11px system-ui,sans-serif';
+      ctx.fillText(l.unit ?? '', W - 36, y + 26); ctx.textAlign = 'left';
+      ctx.fillStyle = '#f1f5f9'; ctx.fillRect(36, y + H_ITEM - 1, W - 72, 1);
+      y += H_ITEM;
     }
+    y += 8;
   }
 
-  // ── Footer ──────────────────────────────────────────────────────────────────
-  y += PAD;
-  ctx.fillStyle = '#0d9488';
-  ctx.fillRect(0, y, W, FOOTER_H);
-
-  ctx.fillStyle = '#ccfbf1';
-  ctx.font = '600 12px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('RestoHub · Inventory Management', W / 2, y + 22);
-  ctx.fillStyle = '#99f6e4';
-  ctx.font = '500 11px system-ui, sans-serif';
-  ctx.fillText(
-    `Order #${order.id} · Generated ${fmtDate(new Date().toISOString())}`,
-    W / 2, y + 42
-  );
+  // Footer
+  ctx.fillStyle = '#0d9488'; ctx.fillRect(0, y + PAD, W, H_FOOT);
+  ctx.fillStyle = '#ccfbf1'; ctx.font = '600 12px system-ui,sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('RestoHub · Inventory Management System', W / 2, y + PAD + 22);
+  ctx.fillStyle = '#99f6e4'; ctx.font = '500 11px system-ui,sans-serif';
+  ctx.fillText(`Order #${order.id} · Generated ${fmtDate(new Date().toISOString())}`, W / 2, y + PAD + 42);
   ctx.textAlign = 'left';
 
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     canvas.toBlob(
-      (blob) => resolve(new File([blob!], `order-${order.id}.png`, { type: 'image/png' })),
+      blob => resolve(new File([blob!], `order-${order.id}.png`, { type: 'image/png' })),
       'image/png'
     );
   });
 }
 
+// ── Status colors ─────────────────────────────────────────────────────────────
+
+const STATUS_COLORS: Record<string, string> = {
+  DRAFT:     'bg-slate-100 text-slate-600',
+  SUBMITTED: 'bg-amber-100 text-amber-700',
+  APPROVED:  'bg-emerald-100 text-emerald-700',
+  SENT:      'bg-blue-100 text-blue-700',
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
-  const [lines, setLines]         = useState<OrderLineDetail[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false); // flips after successful submit
-  const [sharing, setSharing]     = useState(false);
-  const [error, setError]         = useState<string | null>(null);
+  const [lines, setLines]             = useState<OrderLineDetail[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [submitting, setSubmitting]   = useState(false);
+  const [submitted, setSubmitted]     = useState(false);
+  const [sharing, setSharing]         = useState(false);
+  const [error, setError]             = useState<string | null>(null);
 
-  // Treat already-submitted orders as if we just submitted them (show share button)
+  // Per-line local edits { qty, unit } — applied on submit
+  const [lineEdits, setLineEdits] = useState<Map<number, { qty: string; unit: string }>>(new Map());
+
+  // Add items sheet
+  const [showAddSheet, setShowAddSheet]           = useState(false);
+  const [allProducts, setAllProducts]             = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading]     = useState(false);
+  const [addQtys, setAddQtys]                     = useState<Map<number, number>>(new Map());
+  const [addSearch, setAddSearch]                 = useState('');
+  const [adding, setAdding]                       = useState<Set<number>>(new Set());
+
   const currentStatus = submitted ? 'SUBMITTED' : (order.status as string);
-  const isDraft       = currentStatus === 'DRAFT';
-  const canShare      = !isDraft && !loading && lines.length > 0;
+  const isDraft  = currentStatus === 'DRAFT';
+  const canShare = !isDraft && !loading && lines.length > 0;
 
   useEffect(() => { loadLines(); }, []);
 
   const loadLines = async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const data = await fetchOrderLinesWithProducts(order.id);
       data.sort((a, b) => {
-        const diff = (a.category_sort_order ?? 99) - (b.category_sort_order ?? 99);
-        return diff !== 0 ? diff : a.product_name.localeCompare(b.product_name);
+        const vd = (a.vendor_name ?? '').localeCompare(b.vendor_name ?? '');
+        return vd !== 0 ? vd : a.product_name.localeCompare(b.product_name);
       });
       setLines(data);
     } catch (e: any) {
@@ -261,12 +196,42 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
     }
   };
 
-  const handleSubmit = async () => {
-    setSubmitting(true);
-    setError(null);
+  // ── Edit helpers ──────────────────────────────────────────────────────────
+
+  const getEditQty  = (l: OrderLineDetail) => lineEdits.get(l.id)?.qty  ?? String(l.qty_ordered);
+  const getEditUnit = (l: OrderLineDetail) => lineEdits.get(l.id)?.unit ?? (l.unit ?? '');
+
+  const patchEdit = (lineId: number, patch: Partial<{ qty: string; unit: string }>) =>
+    setLineEdits(prev => {
+      const next = new Map(prev);
+      next.set(lineId, { qty: String((prev.get(lineId) ?? { qty: '', unit: '' }).qty), unit: '', ...prev.get(lineId), ...patch });
+      return next;
+    });
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+
+  const handleDeleteLine = async (lineId: number) => {
+    setLines(prev => prev.filter(l => l.id !== lineId));          // optimistic
+    setLineEdits(prev => { const n = new Map(prev); n.delete(lineId); return n; });
     try {
+      await deleteOrderLine(lineId);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to remove item');
+      loadLines();                                                  // restore on failure
+    }
+  };
+
+  // ── Submit ────────────────────────────────────────────────────────────────
+
+  const handleSubmit = async () => {
+    setSubmitting(true); setError(null);
+    try {
+      for (const [id, e] of lineEdits.entries()) {
+        const qty = parseFloat(e.qty);
+        if (!isNaN(qty) && qty > 0) await updateOrderLine(id, qty, e.unit || undefined);
+      }
       await submitOrder(order.id, user.name);
-      setSubmitted(true); // stay on page — show share footer
+      setSubmitted(true);
     } catch (e: any) {
       setError(e.message ?? 'Failed to submit order');
     } finally {
@@ -274,85 +239,114 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
     }
   };
 
+  // ── Share ─────────────────────────────────────────────────────────────────
+
   const handleShare = async () => {
-    setSharing(true);
-    setError(null);
+    setSharing(true); setError(null);
     try {
-      // Build grouped structure for the image
-      const grouped: [string, OrderLineDetail[]][] = [];
-      const seen = new Set<string>();
-      lines.forEach((l) => {
-        const cat = l.category_name ?? 'Other';
-        if (!seen.has(cat)) { seen.add(cat); grouped.push([cat, []]); }
-        grouped.find(([c]) => c === cat)![1].push(l);
-      });
+      const displayOrder = submitted
+        ? { ...order, status: 'SUBMITTED', submitted_by: user.name }
+        : order;
+      const groups = makeVendorGroups(lines);
+      const file   = await generateOrderImage(displayOrder, lines, groups);
 
-      const file = await generateOrderImage(
-        submitted ? { ...order, status: 'SUBMITTED', submitted_by: user.name } : order,
-        lines,
-        grouped
-      );
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({
           title: `Inventory Order — Due ${fmtDate(order.due_date)}`,
-          text: `${lines.length} items · Submitted by ${user.name}`,
+          text:  `${lines.length} items · Submitted by ${user.name}`,
           files: [file],
         });
       } else {
-        // Fallback: download
         const url = URL.createObjectURL(file);
         const a   = document.createElement('a');
-        a.href    = url;
-        a.download = file.name;
-        a.click();
+        a.href = url; a.download = file.name; a.click();
         URL.revokeObjectURL(url);
       }
     } catch (e: any) {
-      if (e?.name !== 'AbortError') {
-        setError('Could not share. Try again.');
-      }
+      if (e?.name !== 'AbortError') setError('Could not share. Try again.');
     } finally {
       setSharing(false);
     }
   };
 
-  const formatDate = (iso: string) => fmtDate(iso);
+  // ── Add items sheet ───────────────────────────────────────────────────────
 
-  // Group for display
-  const grouped: [string, OrderLineDetail[]][] = [];
-  const seen = new Set<string>();
-  lines.forEach((l) => {
-    const cat = l.category_name ?? 'Other';
-    if (!seen.has(cat)) { seen.add(cat); grouped.push([cat, []]); }
-    grouped.find(([c]) => c === cat)![1].push(l);
+  const openAddSheet = async () => {
+    setShowAddSheet(true);
+    if (allProducts.length === 0) {
+      setProductsLoading(true);
+      try { setAllProducts(await fetchProducts()); } catch {} finally { setProductsLoading(false); }
+    }
+  };
+
+  const handleAddProduct = async (product: Product) => {
+    const qty = addQtys.get(product.id) ?? 1;
+    setAdding(prev => new Set(prev).add(product.id));
+    try {
+      await createOrderLines([{
+        order_id: order.id, product_id: product.id,
+        qty_ordered: qty, unit: product.unit || undefined, notes: undefined,
+      }]);
+      const fresh = await fetchOrderLinesWithProducts(order.id);
+      fresh.sort((a, b) => {
+        const vd = (a.vendor_name ?? '').localeCompare(b.vendor_name ?? '');
+        return vd !== 0 ? vd : a.product_name.localeCompare(b.product_name);
+      });
+      setLines(fresh);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to add item');
+    } finally {
+      setAdding(prev => { const s = new Set(prev); s.delete(product.id); return s; });
+    }
+  };
+
+  const bumpAddQty = (productId: number, delta: number) =>
+    setAddQtys(prev => new Map(prev).set(productId, Math.max(1, (prev.get(productId) ?? 1) + delta)));
+
+  // ── Computed ──────────────────────────────────────────────────────────────
+
+  const vendorGroups      = makeVendorGroups(lines);
+  const orderedProductIds = new Set(lines.map(l => l.product_id));
+
+  const availableProducts = allProducts
+    .filter(p => !orderedProductIds.has(p.id) &&
+      (!addSearch || p.name.toLowerCase().includes(addSearch.toLowerCase())))
+    .sort((a, b) => {
+      const ao = a.categories?.sort_order ?? 99, bo = b.categories?.sort_order ?? 99;
+      return ao !== bo ? ao - bo : a.name.localeCompare(b.name);
+    });
+
+  const availableGrouped: [string, Product[]][] = [];
+  const agSeen = new Set<string>();
+  availableProducts.forEach(p => {
+    const cat = p.categories?.name ?? 'Other';
+    if (!agSeen.has(cat)) { agSeen.add(cat); availableGrouped.push([cat, []]); }
+    availableGrouped.find(([c]) => c === cat)![1].push(p);
   });
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 animate-fadeIn">
+
       {/* Header */}
       <header className="flex items-center gap-4 p-4 bg-white border-b border-slate-100 sticky top-0 z-10">
-        <button
-          onClick={onBack}
-          disabled={submitting}
-          className="p-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors"
-        >
+        <button onClick={onBack} disabled={submitting}
+          className="p-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
         <div className="flex-1">
           <h1 className="text-lg font-black text-slate-900 tracking-tight">Review Order</h1>
-          <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">
-            Due {formatDate(order.due_date)}
-          </p>
+          <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Due {fmtDate(order.due_date)}</p>
         </div>
         <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${STATUS_COLORS[currentStatus] ?? 'bg-slate-100 text-slate-600'}`}>
           {currentStatus}
         </span>
       </header>
 
-      <div className={`flex-1 p-4 space-y-4 ${isDraft ? 'pb-28' : 'pb-28'}`}>
+      <div className="flex-1 p-4 space-y-4 pb-28">
 
-        {/* Success banner after submit */}
+        {/* Success banner */}
         {submitted && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
@@ -365,18 +359,12 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
           </div>
         )}
 
-        {/* Order meta */}
+        {/* Meta */}
         <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-1">
           <div className="flex justify-between text-xs">
             <span className="text-slate-400 font-semibold">Created by</span>
             <span className="text-slate-700 font-bold">{order.submitted_by ?? user.name}</span>
           </div>
-          {order.submitted_at && !submitted && (
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400 font-semibold">Submitted</span>
-              <span className="text-slate-700 font-bold">{formatDate(order.submitted_at)}</span>
-            </div>
-          )}
           {order.notes && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
               {order.notes}
@@ -391,7 +379,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
           </div>
         )}
 
-        {/* Lines grouped by category */}
+        {/* Lines grouped by vendor */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4">
             <div className="relative">
@@ -402,37 +390,78 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
           </div>
         ) : lines.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-100 p-8 text-center">
-            <p className="text-slate-500 font-semibold text-sm">No items in this order.</p>
+            <p className="text-slate-500 font-semibold text-sm">No items yet. Tap "Add Items" below.</p>
           </div>
         ) : (
-          grouped.map(([category, catLines]) => (
-            <div key={category} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-teal-100 text-teal-700">
-                  {category}
-                </span>
-                <span className="text-[10px] text-slate-400 font-medium">{catLines.length} item{catLines.length !== 1 ? 's' : ''}</span>
+          vendorGroups.map(([vendor, vLines]) => (
+            <div key={vendor} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+
+              {/* Vendor header */}
+              <div className="px-4 py-3 bg-teal-600 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                <span className="text-[11px] font-black uppercase tracking-widest text-white flex-1">{vendor}</span>
+                <span className="text-[10px] text-teal-200 font-medium">{vLines.length} item{vLines.length !== 1 ? 's' : ''}</span>
               </div>
+
+              {/* Line rows */}
               <div className="divide-y divide-slate-50">
-                {catLines.map((line) => (
+                {vLines.map((line) => (
                   <div key={line.id} className="px-4 py-3 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-800 leading-tight">{line.product_name}</p>
-                      {line.vendor_name && (
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 mt-1 inline-block">
-                          {line.vendor_name}
+                      {line.category_name && (
+                        <span className="text-[10px] font-bold text-teal-700 bg-teal-50 rounded px-1.5 py-0.5 mt-1 inline-block">
+                          {line.category_name}
                         </span>
                       )}
                     </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-base font-black text-teal-700">{line.qty_ordered}</p>
-                      <p className="text-[10px] text-slate-400 font-medium">{line.unit}</p>
-                    </div>
+
+                    {isDraft ? (
+                      /* Edit controls */
+                      <div className="flex items-center gap-2 shrink-0">
+                        <input
+                          type="number" min="0.1" step="0.5"
+                          value={getEditQty(line)}
+                          onChange={e => patchEdit(line.id, { qty: e.target.value })}
+                          className="w-14 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-bold text-sm text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
+                        />
+                        <input
+                          type="text"
+                          value={getEditUnit(line)}
+                          onChange={e => patchEdit(line.id, { unit: e.target.value })}
+                          className="w-14 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-500 font-medium text-xs text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
+                          placeholder="unit"
+                        />
+                        <button
+                          onClick={() => handleDeleteLine(line.id)}
+                          className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                        </button>
+                      </div>
+                    ) : (
+                      /* Read-only */
+                      <div className="text-right shrink-0">
+                        <p className="text-base font-black text-teal-700">{line.qty_ordered}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">{line.unit}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           ))
+        )}
+
+        {/* Add items button — DRAFT only */}
+        {isDraft && !loading && (
+          <button
+            onClick={openAddSheet}
+            className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-200 text-slate-400 font-bold text-sm hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50 transition-all flex items-center justify-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Items
+          </button>
         )}
 
         {!loading && lines.length > 0 && (
@@ -444,8 +473,6 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
 
       {/* ── Footer ── */}
       <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto p-4 bg-white border-t border-slate-100 shadow-lg">
-
-        {/* DRAFT — Submit button */}
         {isDraft && (
           <button
             onClick={handleSubmit}
@@ -462,20 +489,16 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                 </svg>
-                Submitting Order...
+                Submitting...
               </span>
-            ) : (
-              `Submit Order — ${lines.length} Item${lines.length !== 1 ? 's' : ''}`
-            )}
+            ) : `Submit Order — ${lines.length} Item${lines.length !== 1 ? 's' : ''}`}
           </button>
         )}
 
-        {/* SUBMITTED / APPROVED / SENT — Share + Done */}
         {canShare && (
           <div className="flex gap-3">
             <button
-              onClick={handleShare}
-              disabled={sharing}
+              onClick={handleShare} disabled={sharing}
               className={`flex-1 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2 ${
                 sharing
                   ? 'border-slate-200 text-slate-400 bg-white cursor-not-allowed'
@@ -506,6 +529,104 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
           </div>
         )}
       </div>
+
+      {/* ── Add Items Sheet ── */}
+      {showAddSheet && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-20" onClick={() => setShowAddSheet(false)} />
+          <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto z-30 bg-white rounded-t-3xl shadow-2xl flex flex-col max-h-[82vh]">
+
+            {/* Sheet header */}
+            <div className="flex items-center gap-3 px-4 pt-5 pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex-1">
+                <h2 className="text-base font-black text-slate-900">Add Items</h2>
+                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest mt-0.5">
+                  {availableProducts.length} product{availableProducts.length !== 1 ? 's' : ''} available
+                </p>
+              </div>
+              <button onClick={() => setShowAddSheet(false)}
+                className="p-2 rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="px-4 py-2.5 shrink-0">
+              <input
+                type="text" placeholder="Search products..." value={addSearch}
+                onChange={e => setAddSearch(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-slate-700 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                autoFocus
+              />
+            </div>
+
+            {/* Product list */}
+            <div className="flex-1 overflow-y-auto">
+              {productsLoading ? (
+                <div className="flex items-center justify-center py-12 gap-3">
+                  <div className="relative w-8 h-8">
+                    <div className="absolute inset-0 border-4 border-teal-100 rounded-full"></div>
+                    <div className="absolute inset-0 border-4 border-t-teal-600 rounded-full animate-spin"></div>
+                  </div>
+                  <p className="text-slate-400 text-sm">Loading products...</p>
+                </div>
+              ) : availableProducts.length === 0 ? (
+                <p className="text-center text-slate-400 text-sm font-medium py-12 px-6">
+                  {addSearch ? 'No products match your search.' : 'All products are already in this order.'}
+                </p>
+              ) : (
+                availableGrouped.map(([cat, catProds]) => (
+                  <div key={cat}>
+                    <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 sticky top-0">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{cat}</span>
+                    </div>
+                    {catProds.map(product => {
+                      const qty       = addQtys.get(product.id) ?? 1;
+                      const isAdding  = adding.has(product.id);
+                      return (
+                        <div key={product.id} className="flex items-center gap-3 px-4 py-3 border-b border-slate-50">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-800 leading-tight">{product.name}</p>
+                            {product.vendors?.name && (
+                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 mt-0.5 inline-block">
+                                {product.vendors.name}
+                              </span>
+                            )}
+                          </div>
+                          {/* Qty stepper */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => bumpAddQty(product.id, -1)} disabled={isAdding}
+                              className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 font-bold flex items-center justify-center hover:bg-slate-100 disabled:opacity-40 text-base leading-none">
+                              −
+                            </button>
+                            <span className="w-7 text-center font-black text-sm text-slate-800">{qty}</span>
+                            <button onClick={() => bumpAddQty(product.id, 1)} disabled={isAdding}
+                              className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 font-bold flex items-center justify-center hover:bg-slate-100 disabled:opacity-40 text-base leading-none">
+                              +
+                            </button>
+                          </div>
+                          {/* Add button */}
+                          <button
+                            onClick={() => handleAddProduct(product)}
+                            disabled={isAdding}
+                            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+                              isAdding
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : 'bg-teal-600 text-white hover:bg-teal-700 active:scale-95'
+                            }`}
+                          >
+                            {isAdding ? '…' : 'Add'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
