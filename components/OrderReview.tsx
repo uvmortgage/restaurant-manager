@@ -460,8 +460,8 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
 
       {/* ── Footer ── */}
       <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto p-4 bg-white border-t border-slate-100 shadow-lg space-y-2">
-        {/* Delete order — DRAFT only */}
-        {order.status === 'DRAFT' && !submitted && (
+        {/* Delete order — Owner only, any status */}
+        {user.role === 'Owner' && (
           confirmDelete ? (
             <div className="flex items-center gap-2 justify-center py-1">
               <span className="text-xs text-slate-500 font-semibold">Delete entire order?</span>

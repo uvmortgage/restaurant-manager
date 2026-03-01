@@ -516,35 +516,37 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                     </div>
                   </button>
 
-                  {/* Delete row */}
-                  <div className="border-t border-slate-50 px-4 py-2 flex justify-end">
-                    {confirmDeleteOrderId === orderId ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-slate-500 font-semibold">Delete this order?</span>
+                  {/* Delete row — Owner only */}
+                  {user.role === 'Owner' && (
+                    <div className="border-t border-slate-50 px-4 py-2 flex justify-end">
+                      {confirmDeleteOrderId === orderId ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-slate-500 font-semibold">Delete this order?</span>
+                          <button
+                            onClick={() => handleDeleteOrder(orderId)}
+                            disabled={deletingOrderId === orderId}
+                            className="text-[11px] font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 disabled:opacity-40 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                          >
+                            {deletingOrderId === orderId ? 'Deleting...' : 'Yes, delete'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteOrderId(null)}
+                            className="text-[11px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
                         <button
-                          onClick={() => handleDeleteOrder(orderId)}
-                          disabled={deletingOrderId === orderId}
-                          className="text-[11px] font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 disabled:opacity-40 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                          onClick={() => setConfirmDeleteOrderId(orderId)}
+                          className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
                         >
-                          {deletingOrderId === orderId ? 'Deleting...' : 'Yes, delete'}
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                          Delete
                         </button>
-                        <button
-                          onClick={() => setConfirmDeleteOrderId(null)}
-                          className="text-[11px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmDeleteOrderId(orderId)}
-                        className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                        Delete
-                      </button>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })
