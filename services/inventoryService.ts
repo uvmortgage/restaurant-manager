@@ -14,6 +14,24 @@ export async function fetchProducts(): Promise<Product[]> {
   return (data ?? []) as Product[];
 }
 
+export async function fetchVendors(): Promise<Vendor[]> {
+  const { data, error } = await supabase
+    .from('vendors')
+    .select('id, name, code')
+    .eq('is_active', true)
+    .order('name');
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Vendor[];
+}
+
+export async function updateProductVendor(productId: number, vendorId: number): Promise<void> {
+  const { error } = await supabase
+    .from('products')
+    .update({ vendor_id: vendorId })
+    .eq('id', productId);
+  if (error) throw new Error(error.message);
+}
+
 // ── Orders ────────────────────────────────────────────────────────────────────
 
 export async function fetchOrders(): Promise<Order[]> {

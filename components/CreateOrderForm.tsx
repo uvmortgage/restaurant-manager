@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { Product, Order, OrderLine } from '../inventory-types';
-import { fetchProducts, createOrder, createOrderLines } from '../services/inventoryService';
+import { fetchProducts, fetchVendors, createOrder, createOrderLines, updateProductVendor } from '../services/inventoryService';
+import { Vendor } from '../inventory-types';
 
 interface SelectionState {
   selected: boolean;
@@ -28,9 +29,13 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
   const [error, setError] = useState<string | null>(null);
   const [vendorFilter, setVendorFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [allVendors, setAllVendors] = useState<Vendor[]>([]);
+  // productId → vendorId override (to save back to master product list)
+  const [vendorOverrides, setVendorOverrides] = useState<Map<number, number>>(new Map());
 
   useEffect(() => {
     loadProducts();
+    fetchVendors().then(setAllVendors).catch(() => {});
   }, []);
 
   const loadProducts = async () => {
@@ -49,6 +54,10 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const setVendorOverride = (productId: number, vendorId: number) => {
+    setVendorOverrides((prev) => new Map(prev).set(productId, vendorId));
   };
 
   const updateSelection = (productId: number, patch: Partial<SelectionState>) => {
