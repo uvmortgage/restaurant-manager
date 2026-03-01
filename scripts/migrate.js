@@ -1,137 +1,181 @@
 /**
  * Database migration runner for RestoHub.
  *
- * Usage:
- *   DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-us-east-1.pooler.supabase.com:5432/postgres \
- *   node scripts/migrate.js
+ * Two connection modes (tried in order):
  *
- * Or set SUPABASE_DB_PASSWORD (and optionally SUPABASE_DB_REGION, default: us-east-1).
- * The script connects via the Supabase session pooler (IPv4-compatible).
+ * 1. Supabase Management API (preferred — works over HTTPS, no direct TCP needed)
+ *    Set SUPABASE_ACCESS_TOKEN to a Personal Access Token from:
+ *    https://supabase.com/dashboard/account/tokens
+ *
+ * 2. Direct PostgreSQL (fallback — requires network access to DB host)
+ *    Set DATABASE_URL  or  SUPABASE_DB_PASSWORD
  *
  * Tracks executed migrations in ibgsc._migrations so each file runs only once.
  */
 
-import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const { Client } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 const PROJECT_REF = 'qnpnisokvcsiysiakayr';
+const MGMT_API = `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`;
 
-// Supabase pooler regions to try in order (all are IPv4-accessible).
-// Direct DB host (db.<ref>.supabase.co) is IPv6-only on newer projects.
-const POOLER_REGIONS = [
-  'us-east-1',
-  'us-west-1',
-  'eu-west-1',
-  'eu-central-1',
-  'ap-southeast-1',
-  'ap-northeast-1',
-];
+// ---------------------------------------------------------------------------
+// Management API path
+// ---------------------------------------------------------------------------
 
-function buildConnectionConfigs(password) {
-  if (process.env.DATABASE_URL) {
-    return [{ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }];
-  }
-
-  const region = process.env.SUPABASE_DB_REGION;
-  const regions = region ? [region] : POOLER_REGIONS;
-
-  const configs = [];
-  for (const r of regions) {
-    const host = `aws-0-${r}.pooler.supabase.com`;
-    const base = { host, user: `postgres.${PROJECT_REF}`, password, database: 'postgres', ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 8000 };
-    // Try session mode (5432) then transaction mode (6543) per region
-    configs.push({ ...base, port: 5432 });
-    configs.push({ ...base, port: 6543 });
-  }
-
-  // Also append the direct host as last resort (works if runner has IPv6).
-  configs.push({
-    host: `db.${PROJECT_REF}.supabase.co`,
-    port: 5432,
-    user: 'postgres',
-    password,
-    database: 'postgres',
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 10000,
+async function apiQuery(sql, accessToken) {
+  const res = await fetch(MGMT_API, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query: sql }),
   });
-
-  return configs;
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Management API ${res.status}: ${text}`);
+  }
+  return res.json();
 }
 
-async function connectWithFallback(password) {
-  const configs = buildConnectionConfigs(password);
-  for (const config of configs) {
-    const label = config.connectionString || `${config.user}@${config.host}`;
-    const client = new Client(config);
+async function runViaAPI(accessToken) {
+  console.log('Connecting via Supabase Management API...');
+
+  // Ensure tracking table
+  await apiQuery(
+    `CREATE TABLE IF NOT EXISTS ibgsc._migrations (
+       id         SERIAL PRIMARY KEY,
+       filename   TEXT NOT NULL UNIQUE,
+       applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+     )`,
+    accessToken
+  );
+
+  // Applied migrations
+  const rows = await apiQuery(
+    'SELECT filename FROM ibgsc._migrations ORDER BY filename',
+    accessToken
+  );
+  const applied = new Set(rows.map((r) => r.filename));
+
+  const files = fs
+    .readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  const pending = files.filter((f) => !applied.has(f));
+
+  if (pending.length === 0) {
+    console.log('No pending migrations.');
+    return;
+  }
+
+  console.log(`Found ${pending.length} pending migration(s):`);
+  for (const file of pending) {
+    console.log(`  Running ${file}...`);
+    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+    const safeFile = file.replace(/'/g, "''");
+    // Run migration + record in one transaction
+    await apiQuery(
+      `BEGIN;\n${sql}\nINSERT INTO ibgsc._migrations (filename) VALUES ('${safeFile}');\nCOMMIT;`,
+      accessToken
+    );
+    console.log(`  ✓ ${file}`);
+  }
+
+  console.log('\nAll migrations applied successfully.');
+}
+
+// ---------------------------------------------------------------------------
+// Direct PostgreSQL path (fallback)
+// ---------------------------------------------------------------------------
+
+async function runViaPg(password) {
+  const { default: pg } = await import('pg');
+  const { Client } = pg;
+
+  const POOLER_REGIONS = [
+    'us-east-1', 'us-west-1', 'eu-west-1', 'eu-central-1',
+    'ap-southeast-1', 'ap-northeast-1',
+  ];
+
+  function buildConfigs() {
+    if (process.env.DATABASE_URL) {
+      return [{ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }];
+    }
+    const region = process.env.SUPABASE_DB_REGION;
+    const regions = region ? [region] : POOLER_REGIONS;
+    const configs = [];
+    for (const r of regions) {
+      const base = {
+        host: `aws-0-${r}.pooler.supabase.com`,
+        user: `postgres.${PROJECT_REF}`,
+        password,
+        database: 'postgres',
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 8000,
+      };
+      configs.push({ ...base, port: 5432 });
+      configs.push({ ...base, port: 6543 });
+    }
+    // Direct host as final attempt (IPv6 — only works if runner supports it)
+    configs.push({
+      host: `db.${PROJECT_REF}.supabase.co`,
+      port: 5432,
+      user: 'postgres',
+      password,
+      database: 'postgres',
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 10000,
+    });
+    return configs;
+  }
+
+  let client;
+  for (const cfg of buildConfigs()) {
+    const label = cfg.connectionString || `${cfg.user}@${cfg.host}:${cfg.port}`;
+    const c = new Client(cfg);
     try {
-      await client.connect();
-      console.log(`Connected via ${config.connectionString ? 'DATABASE_URL' : config.host}`);
-      return client;
+      await c.connect();
+      console.log(`Connected via ${label}`);
+      client = c;
+      break;
     } catch (err) {
       console.warn(`  ${label}: ${err.message}`);
-      try { await client.end(); } catch {}
+      try { await c.end(); } catch {}
     }
   }
-  throw new Error('All connection attempts failed. Check SUPABASE_DB_PASSWORD and network access.');
-}
 
-async function ensureMigrationsTable(client) {
-  await client.query(`
+  if (!client) {
+    throw new Error(
+      'All connection attempts failed.\n' +
+      'Tip: set SUPABASE_ACCESS_TOKEN (PAT from supabase.com/dashboard/account/tokens) ' +
+      'to use the Management API instead of a direct connection.'
+    );
+  }
+
+  async function dbQuery(sql, params) {
+    return client.query(sql, params);
+  }
+
+  await dbQuery(`
     CREATE TABLE IF NOT EXISTS ibgsc._migrations (
       id         SERIAL PRIMARY KEY,
       filename   TEXT NOT NULL UNIQUE,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
-}
 
-async function appliedMigrations(client) {
-  const { rows } = await client.query(
-    'SELECT filename FROM ibgsc._migrations ORDER BY filename'
-  );
-  return new Set(rows.map((r) => r.filename));
-}
-
-async function runMigration(client, filename, sql) {
-  console.log(`  Running ${filename}...`);
-  await client.query('BEGIN');
-  try {
-    await client.query(sql);
-    await client.query(
-      'INSERT INTO ibgsc._migrations (filename) VALUES ($1)',
-      [filename]
-    );
-    await client.query('COMMIT');
-    console.log(`  ✓ ${filename}`);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  }
-}
-
-async function main() {
-  const password = process.env.DATABASE_URL ? null : process.env.SUPABASE_DB_PASSWORD;
-  if (!process.env.DATABASE_URL && !password) {
-    console.error('Error: set DATABASE_URL or SUPABASE_DB_PASSWORD');
-    process.exit(1);
-  }
-
-  const client = await connectWithFallback(password);
-
-  await ensureMigrationsTable(client);
-
-  const applied = await appliedMigrations(client);
+  const { rows } = await dbQuery('SELECT filename FROM ibgsc._migrations ORDER BY filename');
+  const applied = new Set(rows.map((r) => r.filename));
 
   const files = fs
     .readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
     .sort();
-
   const pending = files.filter((f) => !applied.has(f));
 
   if (pending.length === 0) {
@@ -142,12 +186,45 @@ async function main() {
 
   console.log(`Found ${pending.length} pending migration(s):`);
   for (const file of pending) {
+    console.log(`  Running ${file}...`);
     const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
-    await runMigration(client, file, sql);
+    await client.query('BEGIN');
+    try {
+      await client.query(sql);
+      await client.query('INSERT INTO ibgsc._migrations (filename) VALUES ($1)', [file]);
+      await client.query('COMMIT');
+      console.log(`  ✓ ${file}`);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
   }
 
   console.log('\nAll migrations applied successfully.');
   await client.end();
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+async function main() {
+  const accessToken = process.env.SUPABASE_ACCESS_TOKEN;
+  const password = process.env.SUPABASE_DB_PASSWORD;
+  const dbUrl = process.env.DATABASE_URL;
+
+  if (!accessToken && !password && !dbUrl) {
+    console.error(
+      'Error: set SUPABASE_ACCESS_TOKEN (recommended) or DATABASE_URL / SUPABASE_DB_PASSWORD'
+    );
+    process.exit(1);
+  }
+
+  if (accessToken) {
+    await runViaAPI(accessToken);
+  } else {
+    await runViaPg(password);
+  }
 }
 
 main().catch((err) => {
