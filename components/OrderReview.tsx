@@ -174,9 +174,9 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
   const [addSearch, setAddSearch]                 = useState('');
   const [adding, setAdding]                       = useState<Set<number>>(new Set());
 
-  const currentStatus = submitted ? 'SUBMITTED' : (order.status as string);
-  const isDraft  = currentStatus === 'DRAFT';
-  const canShare = !isDraft && !loading && lines.length > 0;
+  const currentStatus  = submitted ? 'SUBMITTED' : (order.status as string);
+  const showSubmit     = order.status === 'DRAFT' && !submitted;
+  const canShare       = submitted || order.status !== 'DRAFT';
 
   useEffect(() => { loadLines(); }, []);
 
@@ -203,10 +203,26 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
 
   const patchEdit = (lineId: number, patch: Partial<{ qty: string; unit: string }>) =>
     setLineEdits(prev => {
-      const next = new Map(prev);
-      next.set(lineId, { qty: String((prev.get(lineId) ?? { qty: '', unit: '' }).qty), unit: '', ...prev.get(lineId), ...patch });
-      return next;
+      const line = lines.find(l => l.id === lineId);
+      const base = prev.get(lineId) ?? { qty: String(line?.qty_ordered ?? ''), unit: line?.unit ?? '' };
+      return new Map(prev).set(lineId, { ...base, ...patch });
     });
+
+  // Save a single line to the DB (called on blur)
+  const saveLineToDB = async (lineId: number) => {
+    const edit = lineEdits.get(lineId);
+    if (!edit) return;
+    const qty = parseFloat(edit.qty);
+    if (isNaN(qty) || qty <= 0) return;
+    try {
+      await updateOrderLine(lineId, qty, edit.unit || undefined);
+      setLines(prev => prev.map(l =>
+        l.id === lineId ? { ...l, qty_ordered: qty, unit: edit.unit || l.unit } : l
+      ));
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to save');
+    }
+  };
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
@@ -226,10 +242,12 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
   const handleSubmit = async () => {
     setSubmitting(true); setError(null);
     try {
+      // Flush any pending edits (in case user hadn't blurred inputs yet)
       for (const [id, e] of lineEdits.entries()) {
         const qty = parseFloat(e.qty);
         if (!isNaN(qty) && qty > 0) await updateOrderLine(id, qty, e.unit || undefined);
       }
+      setLineEdits(new Map());
       await submitOrder(order.id, user.name);
       setSubmitted(true);
     } catch (e: any) {
@@ -416,36 +434,30 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
                       )}
                     </div>
 
-                    {isDraft ? (
-                      /* Edit controls */
-                      <div className="flex items-center gap-2 shrink-0">
-                        <input
-                          type="number" min="0.1" step="0.5"
-                          value={getEditQty(line)}
-                          onChange={e => patchEdit(line.id, { qty: e.target.value })}
-                          className="w-14 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-bold text-sm text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
-                        />
-                        <input
-                          type="text"
-                          value={getEditUnit(line)}
-                          onChange={e => patchEdit(line.id, { unit: e.target.value })}
-                          className="w-14 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-500 font-medium text-xs text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
-                          placeholder="unit"
-                        />
-                        <button
-                          onClick={() => handleDeleteLine(line.id)}
-                          className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                        </button>
-                      </div>
-                    ) : (
-                      /* Read-only */
-                      <div className="text-right shrink-0">
-                        <p className="text-base font-black text-teal-700">{line.qty_ordered}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">{line.unit}</p>
-                      </div>
-                    )}
+                    {/* Edit controls — always visible */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <input
+                        type="number" min="0.1" step="0.5"
+                        value={getEditQty(line)}
+                        onChange={e => patchEdit(line.id, { qty: e.target.value })}
+                        onBlur={() => saveLineToDB(line.id)}
+                        className="w-14 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-bold text-sm text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
+                      />
+                      <input
+                        type="text"
+                        value={getEditUnit(line)}
+                        onChange={e => patchEdit(line.id, { unit: e.target.value })}
+                        onBlur={() => saveLineToDB(line.id)}
+                        className="w-14 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-500 font-medium text-xs text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
+                        placeholder="unit"
+                      />
+                      <button
+                        onClick={() => handleDeleteLine(line.id)}
+                        className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -453,8 +465,8 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
           ))
         )}
 
-        {/* Add items button — DRAFT only */}
-        {isDraft && !loading && (
+        {/* Add items button — always visible */}
+        {!loading && (
           <button
             onClick={openAddSheet}
             className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-200 text-slate-400 font-bold text-sm hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50 transition-all flex items-center justify-center gap-2"
@@ -473,7 +485,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
 
       {/* ── Footer ── */}
       <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto p-4 bg-white border-t border-slate-100 shadow-lg">
-        {isDraft && (
+        {showSubmit && (
           <button
             onClick={handleSubmit}
             disabled={submitting || lines.length === 0 || loading}
