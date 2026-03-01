@@ -1,0 +1,62 @@
+name: Run DB Migration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pg
+        run: npm install pg
+
+      - name: Run migration 002_add_order_type
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          node - <<'EOF'
+          const { Client } = require('pg');
+
+          const client = new Client({
+            host: 'aws-0-us-east-1.pooler.supabase.com',
+            port: 5432,
+            user: 'postgres.qnpnisokvcsiysiakayr',
+            password: process.env.SUPABASE_DB_PASSWORD,
+            database: 'postgres',
+            ssl: { rejectUnauthorized: false },
+          });
+
+          async function main() {
+            await client.connect();
+            console.log('Connected to Supabase');
+
+            await client.query(`
+              ALTER TABLE ibgsc.orders
+                ADD COLUMN IF NOT EXISTS order_type TEXT NOT NULL DEFAULT 'WEEKLY_FOOD'
+                  CHECK (order_type IN ('WEEKLY_FOOD', 'BAR', 'IBG'))
+            `);
+            console.log('✓ ALTER TABLE ibgsc.orders ADD COLUMN order_type');
+
+            await client.query(`
+              UPDATE ibgsc.orders SET order_type = 'WEEKLY_FOOD' WHERE order_type IS NULL
+            `);
+            console.log('✓ UPDATE backfill');
+
+            await client.query(`
+              COMMENT ON COLUMN ibgsc.orders.order_type IS
+                'Sub-category of order: WEEKLY_FOOD | BAR | IBG'
+            `);
+            console.log('✓ COMMENT ON COLUMN');
+
+            await client.end();
+            console.log('Migration 002_add_order_type complete!');
+          }
+
+          main().catch((err) => { console.error(err.message); process.exit(1); });
+          EOF
