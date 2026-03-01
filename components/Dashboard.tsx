@@ -51,6 +51,23 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="space-y-6">
         <h2 className="text-2xl font-black text-slate-800 tracking-tight">Management Hub</h2>
 
+        {/* Inventory Manager Card */}
+        <button
+          onClick={() => onNavigate('INVENTORY_MANAGER')}
+          className="w-full text-left bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-center gap-5 hover:border-teal-300 hover:shadow-md transition-all active:scale-[0.98]"
+        >
+          <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-600">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-slate-800 text-sm">Inventory Manager</h3>
+            <p className="text-xs font-medium text-slate-500 mt-1">Manage supply orders</p>
+          </div>
+          <div className="text-slate-300">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </div>
+        </button>
+
         {/* Cash Manager Card - ONLY VISIBLE TO OWNER */}
         {isOwner && (
           <button
@@ -123,22 +140,6 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </button>
 
-        {/* Inventory Manager Card */}
-        <button
-          onClick={() => onNavigate('INVENTORY_MANAGER')}
-          className="w-full text-left bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-center gap-5 hover:border-teal-300 hover:shadow-md transition-all active:scale-[0.98]"
-        >
-          <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-600">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>
-          </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-bold text-slate-800 text-sm">Inventory Manager</h3>
-            <p className="text-xs font-medium text-slate-500 mt-1">Manage supply orders</p>
-          </div>
-          <div className="text-slate-300">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-          </div>
-        </button>
       </div>
 
       <footer className="mt-auto pt-10 text-center">
