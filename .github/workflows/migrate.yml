@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: ["claude/understand-repo-XsHjD"]
-    paths: ["migrations/**", ".github/workflows/migrate.yml"]
+    paths: ["migrations/**", ".github/workflows/migrate.yml", "scripts/migrate.js"]
 
 jobs:
   migrate:
