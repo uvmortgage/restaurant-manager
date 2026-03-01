@@ -17,7 +17,7 @@ jobs:
           node-version: 20
           cache: "npm"
 
-      - run: npm install
+      - run: npm install --include=dev
 
       - name: Run migrations
         env:
