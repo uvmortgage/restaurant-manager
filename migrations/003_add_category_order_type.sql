@@ -16,14 +16,14 @@ INSERT INTO ibgsc.categories (name, sort_order, order_type) VALUES
   ('Non-Alcoholic Beverages', 10, 'BAR'),
   ('Beer and Wine',           20, 'BAR'),
   ('ABC Spirits',             30, 'BAR'),
-  ('Misc',                    40, 'BAR');
+  ('Bar Misc',                40, 'BAR');
 
 -- IBG Order categories
 INSERT INTO ibgsc.categories (name, sort_order, order_type) VALUES
-  ('Food',            10, 'IBG'),
-  ('Paper Products',  20, 'IBG'),
-  ('Crockery',        30, 'IBG'),
-  ('Misc',            40, 'IBG');
+  ('IBG Food',         10, 'IBG'),
+  ('Paper Products',   20, 'IBG'),
+  ('Crockery',         30, 'IBG'),
+  ('IBG Misc',         40, 'IBG');
 
 -- ── 3. Seed sample vendors for Bar & IBG ─────────────────────────────────────
 INSERT INTO ibgsc.vendors (code, name, is_active) VALUES
@@ -47,7 +47,7 @@ BEGIN
   SELECT id INTO c_nonalc   FROM ibgsc.categories WHERE name = 'Non-Alcoholic Beverages' AND order_type = 'BAR' LIMIT 1;
   SELECT id INTO c_beer     FROM ibgsc.categories WHERE name = 'Beer and Wine'            AND order_type = 'BAR' LIMIT 1;
   SELECT id INTO c_spirits  FROM ibgsc.categories WHERE name = 'ABC Spirits'              AND order_type = 'BAR' LIMIT 1;
-  SELECT id INTO c_misc_bar FROM ibgsc.categories WHERE name = 'Misc'                     AND order_type = 'BAR' LIMIT 1;
+  SELECT id INTO c_misc_bar FROM ibgsc.categories WHERE name = 'Bar Misc'                 AND order_type = 'BAR' LIMIT 1;
 
   INSERT INTO ibgsc.products (name, category_id, vendor_id, unit, is_active) VALUES
     -- Non-Alcoholic Beverages
@@ -88,10 +88,10 @@ DECLARE
   c_misc_ibg INTEGER;
 BEGIN
   SELECT id INTO v_ibg      FROM ibgsc.vendors     WHERE code = 'IBG-DIST'     LIMIT 1;
-  SELECT id INTO c_food     FROM ibgsc.categories  WHERE name = 'Food'           AND order_type = 'IBG' LIMIT 1;
+  SELECT id INTO c_food     FROM ibgsc.categories  WHERE name = 'IBG Food'       AND order_type = 'IBG' LIMIT 1;
   SELECT id INTO c_paper    FROM ibgsc.categories  WHERE name = 'Paper Products' AND order_type = 'IBG' LIMIT 1;
   SELECT id INTO c_crock    FROM ibgsc.categories  WHERE name = 'Crockery'       AND order_type = 'IBG' LIMIT 1;
-  SELECT id INTO c_misc_ibg FROM ibgsc.categories  WHERE name = 'Misc'           AND order_type = 'IBG' LIMIT 1;
+  SELECT id INTO c_misc_ibg FROM ibgsc.categories  WHERE name = 'IBG Misc'       AND order_type = 'IBG' LIMIT 1;
 
   INSERT INTO ibgsc.products (name, category_id, vendor_id, unit, is_active) VALUES
     -- Food
