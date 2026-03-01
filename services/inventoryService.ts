@@ -6,7 +6,7 @@ import { Product, Order, OrderLine, OrderLineDetail, Vendor, Category } from '..
 export async function fetchProducts(): Promise<Product[]> {
   const { data, error } = await supabase
     .from('products')
-    .select('*, categories(name, sort_order), vendors(name, code)')
+    .select('*, categories(name, sort_order, order_type), vendors(name, code)')
     .eq('is_active', true)
     .order('name');
 

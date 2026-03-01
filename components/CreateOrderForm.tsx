@@ -92,12 +92,19 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
 
   const selectedCount = Array.from(selections.values()).filter((s) => s.selected).length;
 
-  // Unique vendors and categories for filter dropdowns
-  const vendors = [...new Map(products.filter((p) => p.vendors?.name).map((p) => [p.vendors!.name, p.vendors!.name])).values()].sort();
-  const categories = [...new Map(products.filter((p) => p.categories?.name).map((p) => [p.categories!.name, p.categories!.name])).values()].sort();
+  // Unique vendors and categories for filter dropdowns — scoped to this order type
+  const orderTypeProducts = products.filter((p) => {
+    const catOrderType = p.categories?.order_type;
+    return !catOrderType || catOrderType === orderType;
+  });
+  const vendors = [...new Map(orderTypeProducts.filter((p) => p.vendors?.name).map((p) => [p.vendors!.name, p.vendors!.name])).values()].sort();
+  const categories = [...new Map(orderTypeProducts.filter((p) => p.categories?.name).map((p) => [p.categories!.name, p.categories!.name])).values()].sort();
 
   // Apply filters then group by category
   const filteredProducts = products.filter((p) => {
+    // Only show products whose category belongs to this order type (or has no order_type set)
+    const catOrderType = p.categories?.order_type;
+    if (catOrderType && catOrderType !== orderType) return false;
     if (vendorFilter && p.vendors?.name !== vendorFilter) return false;
     if (categoryFilter && p.categories?.name !== categoryFilter) return false;
     if (searchFilter && !p.name.toLowerCase().includes(searchFilter.toLowerCase())) return false;
