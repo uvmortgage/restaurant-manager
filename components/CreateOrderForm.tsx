@@ -26,6 +26,8 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [vendorFilter, setVendorFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
 
   useEffect(() => {
     loadProducts();
@@ -60,10 +62,20 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
 
   const selectedCount = Array.from(selections.values()).filter((s) => s.selected).length;
 
-  // Group products by category (sorted by sort_order then name)
+  // Unique vendors and categories for filter dropdowns
+  const vendors = [...new Map(products.filter((p) => p.vendors?.name).map((p) => [p.vendors!.name, p.vendors!.name])).values()].sort();
+  const categories = [...new Map(products.filter((p) => p.categories?.name).map((p) => [p.categories!.name, p.categories!.name])).values()].sort();
+
+  // Apply filters then group by category
+  const filteredProducts = products.filter((p) => {
+    if (vendorFilter && p.vendors?.name !== vendorFilter) return false;
+    if (categoryFilter && p.categories?.name !== categoryFilter) return false;
+    return true;
+  });
+
   const grouped: [string, Product[]][] = [];
   const seen = new Set<string>();
-  const sorted = [...products].sort((a, b) => {
+  const sorted = [...filteredProducts].sort((a, b) => {
     const ao = a.categories?.sort_order ?? 99;
     const bo = b.categories?.sort_order ?? 99;
     return ao !== bo ? ao - bo : a.name.localeCompare(b.name);
@@ -177,6 +189,34 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
           </div>
         </div>
 
+        {/* Vendor + Category Filters */}
+        {!loading && products.length > 0 && (
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Vendor</label>
+              <select
+                value={vendorFilter}
+                onChange={(e) => setVendorFilter(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+              >
+                <option value="">All Vendors</option>
+                {vendors.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Type</label>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+              >
+                <option value="">All Types</option>
+                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
         {/* Error */}
         {error && (
           <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4">
@@ -196,6 +236,10 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
         ) : products.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-100 p-8 text-center">
             <p className="text-slate-500 font-semibold text-sm">No active products found in the database.</p>
+          </div>
+        ) : grouped.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-100 p-8 text-center">
+            <p className="text-slate-500 font-semibold text-sm">No products match the selected filters.</p>
           </div>
         ) : (
           grouped.map(([category, catProducts]) => (
