@@ -85,3 +85,18 @@ export interface OrderLine {
   // Joined for display
   product_name?: string;
 }
+
+// OrderLine enriched with product + vendor + category — used in OrderReview
+export interface OrderLineDetail {
+  id: number;
+  order_id: number;
+  product_id: number;
+  qty_ordered: number;
+  unit?: string;
+  notes?: string;
+  created_at: string;
+  product_name: string;
+  vendor_name?: string;
+  category_name?: string;
+  category_sort_order: number;
+}

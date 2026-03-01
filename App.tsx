@@ -19,6 +19,7 @@ import AddCateringForm from './components/AddCateringForm';
 import AddCateringPaymentForm from './components/AddCateringPaymentForm';
 import InventoryManager from './components/InventoryManager';
 import CreateOrderForm from './components/CreateOrderForm';
+import OrderReview from './components/OrderReview';
 
 type Screen =
   | 'LOGIN'
@@ -36,7 +37,8 @@ type Screen =
   | 'ADD_CATERING'
   | 'ADD_CATERING_PAYMENT'
   | 'INVENTORY_MANAGER'
-  | 'CREATE_ORDER';
+  | 'CREATE_ORDER'
+  | 'ORDER_REVIEW';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -51,6 +53,7 @@ const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('LOGIN');
   const [selectedEvent, setSelectedEvent] = useState<CateringEvent | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loginError, setLoginError] = useState<string | undefined>();
   const [isInitializing, setIsInitializing] = useState(true);
   const [syncError, setSyncError] = useState(false);
@@ -261,8 +264,9 @@ const App: React.FC = () => {
     setCurrentScreen('DASHBOARD');
   };
 
-  const handleOrderCreated = (_order: Order) => {
-    setCurrentScreen('INVENTORY_MANAGER');
+  const handleOrderCreated = (order: Order) => {
+    setSelectedOrder(order);
+    setCurrentScreen('ORDER_REVIEW');
   };
 
   if (isInitializing) {
@@ -453,6 +457,10 @@ const App: React.FC = () => {
           <InventoryManager
             user={state.currentUser!}
             onCreateOrder={() => setCurrentScreen('CREATE_ORDER')}
+            onViewOrder={(order) => {
+              setSelectedOrder(order);
+              setCurrentScreen('ORDER_REVIEW');
+            }}
             onBack={() => setCurrentScreen('DASHBOARD')}
           />
         );
@@ -464,6 +472,21 @@ const App: React.FC = () => {
             onCancel={() => setCurrentScreen('INVENTORY_MANAGER')}
           />
         );
+      case 'ORDER_REVIEW':
+        return selectedOrder ? (
+          <OrderReview
+            user={state.currentUser!}
+            order={selectedOrder}
+            onBack={() => {
+              setSelectedOrder(null);
+              setCurrentScreen('INVENTORY_MANAGER');
+            }}
+            onSubmitted={() => {
+              setSelectedOrder(null);
+              setCurrentScreen('INVENTORY_MANAGER');
+            }}
+          />
+        ) : null;
       default:
         return null;
     }

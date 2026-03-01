@@ -8,6 +8,7 @@ type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'SENT';
 interface Props {
   user: User;
   onCreateOrder: () => void;
+  onViewOrder: (order: Order) => void;
   onBack: () => void;
 }
 
@@ -18,7 +19,7 @@ const STATUS_COLORS: Record<string, string> = {
   SENT: 'bg-blue-100 text-blue-700',
 };
 
-const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onBack }) => {
+const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, onBack }) => {
   const [orders, setOrders] = useState<(Order & { line_count?: number })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,15 +118,16 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onBack }) => {
           </div>
         ) : (
           orders.map((order) => (
-            <div
+            <button
               key={order.id}
-              className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3"
+              onClick={() => onViewOrder(order)}
+              className="w-full text-left bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3 active:scale-[0.98] transition-transform"
             >
               {/* Top row */}
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${STATUS_COLORS[order.status]}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${STATUS_COLORS[order.status] ?? 'bg-slate-100 text-slate-600'}`}>
                       {order.status}
                     </span>
                   </div>
@@ -133,14 +135,15 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onBack }) => {
                     Due: {formatDate(order.due_date)}
                   </p>
                   {order.submitted_by && (
-                    <p className="text-slate-500 text-xs mt-0.5">
-                      By {order.submitted_by}
-                    </p>
+                    <p className="text-slate-500 text-xs mt-0.5">By {order.submitted_by}</p>
                   )}
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-2xl font-black text-teal-600">{order.line_count ?? 0}</p>
-                  <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">items</p>
+                <div className="flex items-center gap-3">
+                  <div className="text-right shrink-0">
+                    <p className="text-2xl font-black text-teal-600">{order.line_count ?? 0}</p>
+                    <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">items</p>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300 shrink-0"><path d="m9 18 6-6-6-6"/></svg>
                 </div>
               </div>
 
@@ -154,11 +157,8 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onBack }) => {
               {/* Footer */}
               <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium uppercase tracking-wider pt-1 border-t border-slate-50">
                 <span>Created {formatDate(order.created_at)}</span>
-                {order.approved_by && (
-                  <span className="text-emerald-600 font-bold">✓ Approved by {order.approved_by}</span>
-                )}
               </div>
-            </div>
+            </button>
           ))
         )}
       </div>

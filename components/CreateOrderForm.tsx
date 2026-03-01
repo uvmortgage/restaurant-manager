@@ -130,7 +130,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
         due_date: dueDate,
         submitted_by: user.name,
         submitted_at: new Date().toISOString(),
-        status: 'SUBMITTED',
+        status: 'DRAFT',
         notes: notes.trim() || undefined,
       };
 
@@ -173,7 +173,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
         <div className="flex-1">
-          <h1 className="text-lg font-black text-slate-900 tracking-tight">New Inventory Order</h1>
+          <h1 className="text-lg font-black text-slate-900 tracking-tight">New Order Draft</h1>
           <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">
             {selectedCount > 0 ? `${selectedCount} product${selectedCount > 1 ? 's' : ''} selected` : 'Select products below'}
           </p>
@@ -438,14 +438,14 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel }) => {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
               </svg>
-              Saving Order...
+              Saving Draft...
             </span>
           ) : selectedCount === 0 ? (
-            'Select Products to Place Order'
+            'Select Products to Save Draft'
           ) : !dueDate ? (
             'Set Due Date to Continue'
           ) : (
-            `Place Order — ${selectedCount} Item${selectedCount > 1 ? 's' : ''}`
+            `Save Draft — ${selectedCount} Item${selectedCount > 1 ? 's' : ''}`
           )}
         </button>
       </div>

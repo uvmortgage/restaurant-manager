@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { Product, Order, OrderLine } from '../inventory-types';
+import { Product, Order, OrderLine, OrderLineDetail, Vendor } from '../inventory-types';
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
@@ -75,5 +75,38 @@ export async function createOrderLines(
 ): Promise<void> {
   if (lines.length === 0) return;
   const { error } = await supabase.from('order_lines').insert(lines);
+  if (error) throw new Error(error.message);
+}
+
+// Fetch order lines joined with product name, vendor name, and category for review screen
+export async function fetchOrderLinesWithProducts(orderId: number): Promise<OrderLineDetail[]> {
+  const { data, error } = await supabase
+    .from('order_lines')
+    .select('*, products(name, unit, vendors(name), categories(name, sort_order))')
+    .eq('order_id', orderId)
+    .order('created_at');
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    order_id: row.order_id,
+    product_id: row.product_id,
+    qty_ordered: row.qty_ordered,
+    unit: row.unit ?? row.products?.unit,
+    notes: row.notes,
+    created_at: row.created_at,
+    product_name: row.products?.name ?? `Product #${row.product_id}`,
+    vendor_name: row.products?.vendors?.name,
+    category_name: row.products?.categories?.name,
+    category_sort_order: row.products?.categories?.sort_order ?? 99,
+  }));
+}
+
+export async function submitOrder(orderId: number, submittedBy: string): Promise<void> {
+  const { error } = await supabase
+    .from('orders')
+    .update({ status: 'SUBMITTED', submitted_by: submittedBy, submitted_at: new Date().toISOString() })
+    .eq('id', orderId);
   if (error) throw new Error(error.message);
 }
