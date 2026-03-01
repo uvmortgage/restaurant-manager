@@ -432,6 +432,10 @@ const App: React.FC = () => {
               setSelectedOrder(null);
               setCurrentScreen('INVENTORY_MANAGER');
             }}
+            onDeleted={() => {
+              setSelectedOrder(null);
+              setCurrentScreen('INVENTORY_MANAGER');
+            }}
           />
         ) : null;
 
