@@ -70,6 +70,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const [prodError, setProdError] = useState<string | null>(null);
   const [prodSearch, setProdSearch] = useState('');
   const [prodTypeFilter, setProdTypeFilter] = useState<OrderTypeFilter>('ALL');
+  const [prodCategoryFilter, setProdCategoryFilter] = useState<number | 'ALL'>('ALL');
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState<ProductFormState>(EMPTY_FORM);
   const [addSaving, setAddSaving] = useState(false);
@@ -263,9 +264,11 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     }
   };
 
-  const filteredProducts = products.filter((p) =>
-    !prodSearch || p.name.toLowerCase().includes(prodSearch.toLowerCase())
-  );
+  const filteredProducts = products.filter((p) => {
+    if (prodSearch && !p.name.toLowerCase().includes(prodSearch.toLowerCase())) return false;
+    if (prodCategoryFilter !== 'ALL' && p.category_id !== prodCategoryFilter) return false;
+    return true;
+  });
 
   // Build category id → order_type map for fast lookup
   const catOrderTypeMap = useMemo(() => {
@@ -309,11 +312,14 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     return groups;
   }, [filteredProducts, catOrderTypeMap, prodTypeFilter]);
 
-  // Categories filtered to the current product type filter (for Add form dropdown)
-  const filteredCategories = useMemo(() => {
+  // Categories shown as filter pills (based on selected order type)
+  const categoryPills = useMemo(() => {
     if (prodTypeFilter === 'ALL') return categories;
     return categories.filter((c) => (c.order_type ?? 'WEEKLY_FOOD') === prodTypeFilter);
   }, [categories, prodTypeFilter]);
+
+  // Categories filtered to the current product type filter (for Add form dropdown)
+  const filteredCategories = categoryPills;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -508,7 +514,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
             {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG'] as OrderTypeFilter[]).map((t) => (
               <button
                 key={t}
-                onClick={() => { setProdTypeFilter(t); setAddForm(EMPTY_FORM); }}
+                onClick={() => { setProdTypeFilter(t); setProdCategoryFilter('ALL'); setAddForm(EMPTY_FORM); }}
                 className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${
                   prodTypeFilter === t
                     ? 'bg-teal-600 text-white border-teal-600'
@@ -519,6 +525,35 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
               </button>
             ))}
           </div>
+
+          {/* Category filter pills */}
+          {categoryPills.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <button
+                onClick={() => setProdCategoryFilter('ALL')}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${
+                  prodCategoryFilter === 'ALL'
+                    ? 'bg-slate-700 text-white border-slate-700'
+                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                All Categories
+              </button>
+              {categoryPills.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setProdCategoryFilter(c.id)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${
+                    prodCategoryFilter === c.id
+                      ? 'bg-slate-700 text-white border-slate-700'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Add Product form */}
           {showAddForm && (
