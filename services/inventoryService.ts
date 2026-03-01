@@ -178,3 +178,18 @@ export async function updateOrderLine(lineId: number, qty: number, unit?: string
     .eq('id', lineId);
   if (error) throw new Error(error.message);
 }
+
+export async function deleteOrder(orderId: number): Promise<void> {
+  // Delete order_lines first to avoid FK constraint issues
+  const { error: linesError } = await supabase
+    .from('order_lines')
+    .delete()
+    .eq('order_id', orderId);
+  if (linesError) throw new Error(linesError.message);
+
+  const { error } = await supabase
+    .from('orders')
+    .delete()
+    .eq('id', orderId);
+  if (error) throw new Error(error.message);
+}

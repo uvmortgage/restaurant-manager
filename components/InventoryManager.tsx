@@ -10,6 +10,7 @@ import {
   createProduct,
   updateProduct,
   softDeleteProduct,
+  deleteOrder,
 } from '../services/inventoryService';
 
 type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'SENT';
@@ -61,6 +62,8 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<OrderTypeFilter>('ALL');
   const [showTypePickerFor, setShowTypePickerFor] = useState(false);
+  const [deletingOrderId, setDeletingOrderId] = useState<number | null>(null);
+  const [confirmDeleteOrderId, setConfirmDeleteOrderId] = useState<number | null>(null);
 
   // ── Products tab state ────────────────────────────────────────────────────
   const [products, setProducts] = useState<Product[]>([]);
@@ -132,6 +135,19 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
       setProdError(e.message ?? 'Failed to load products');
     } finally {
       setProdLoading(false);
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: number) => {
+    setDeletingOrderId(orderId);
+    setConfirmDeleteOrderId(null);
+    try {
+      await deleteOrder(orderId);
+      setOrders((prev) => prev.filter((o) => Number(o.id) !== orderId));
+    } catch {
+      // silently fail — list will still show the order
+    } finally {
+      setDeletingOrderId(null);
     }
   };
 
@@ -455,46 +471,83 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
           ) : (
             filteredOrders.map((order) => {
               const otype = (order.order_type ?? 'WEEKLY_FOOD') as OrderType;
+              const orderId = Number(order.id);
               return (
-                <button
+                <div
                   key={order.id}
-                  onClick={() => onViewOrder(order)}
-                  className="w-full text-left bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3 active:scale-[0.98] transition-transform"
+                  className="w-full bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${STATUS_COLORS[order.status] ?? 'bg-slate-100 text-slate-600'}`}>
-                          {order.status}
-                        </span>
-                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${ORDER_TYPE_COLORS[otype] ?? 'bg-slate-100 text-slate-600'}`}>
-                          {ORDER_TYPE_ICONS[otype]} {ORDER_TYPE_LABELS[otype]}
-                        </span>
+                  <button
+                    onClick={() => onViewOrder(order)}
+                    className="w-full text-left p-4 space-y-3 active:scale-[0.99] transition-transform"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${STATUS_COLORS[order.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                            {order.status}
+                          </span>
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${ORDER_TYPE_COLORS[otype] ?? 'bg-slate-100 text-slate-600'}`}>
+                            {ORDER_TYPE_ICONS[otype]} {ORDER_TYPE_LABELS[otype]}
+                          </span>
+                        </div>
+                        <p className="text-slate-800 font-bold text-sm">
+                          Due: {formatDate(order.due_date)}
+                        </p>
+                        {order.submitted_by && (
+                          <p className="text-slate-500 text-xs mt-0.5">By {order.submitted_by}</p>
+                        )}
                       </div>
-                      <p className="text-slate-800 font-bold text-sm">
-                        Due: {formatDate(order.due_date)}
+                      <div className="flex items-center gap-3">
+                        <div className="text-right shrink-0">
+                          <p className="text-2xl font-black text-teal-600">{order.line_count ?? 0}</p>
+                          <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">items</p>
+                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300 shrink-0"><path d="m9 18 6-6-6-6"/></svg>
+                      </div>
+                    </div>
+                    {order.notes && (
+                      <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                        {order.notes}
                       </p>
-                      {order.submitted_by && (
-                        <p className="text-slate-500 text-xs mt-0.5">By {order.submitted_by}</p>
+                    )}
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium uppercase tracking-wider pt-1 border-t border-slate-50">
+                      <span>Created {formatDate(order.created_at)}</span>
+                    </div>
+                  </button>
+
+                  {/* Delete row — Owner only */}
+                  {user.role === 'Owner' && (
+                    <div className="border-t border-slate-50 px-4 py-2 flex justify-end">
+                      {confirmDeleteOrderId === orderId ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-slate-500 font-semibold">Delete this order?</span>
+                          <button
+                            onClick={() => handleDeleteOrder(orderId)}
+                            disabled={deletingOrderId === orderId}
+                            className="text-[11px] font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 disabled:opacity-40 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                          >
+                            {deletingOrderId === orderId ? 'Deleting...' : 'Yes, delete'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteOrderId(null)}
+                            className="text-[11px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteOrderId(orderId)}
+                          className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                          Delete
+                        </button>
                       )}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right shrink-0">
-                        <p className="text-2xl font-black text-teal-600">{order.line_count ?? 0}</p>
-                        <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">items</p>
-                      </div>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300 shrink-0"><path d="m9 18 6-6-6-6"/></svg>
-                    </div>
-                  </div>
-                  {order.notes && (
-                    <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                      {order.notes}
-                    </p>
                   )}
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium uppercase tracking-wider pt-1 border-t border-slate-50">
-                    <span>Created {formatDate(order.created_at)}</span>
-                  </div>
-                </button>
+                </div>
               );
             })
           )}

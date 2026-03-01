@@ -6,6 +6,7 @@ import {
   submitOrder,
   deleteOrderLine,
   updateOrderLine,
+  deleteOrder,
 } from '../services/inventoryService';
 import CreateOrderForm from './CreateOrderForm';
 
@@ -14,6 +15,7 @@ interface Props {
   order: Order;
   onBack: () => void;
   onSubmitted: () => void;
+  onDeleted: () => void;
 }
 
 // ── Canvas helpers ────────────────────────────────────────────────────────────
@@ -154,13 +156,15 @@ const STATUS_COLORS: Record<string, string> = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
+const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDeleted }) => {
   const [lines, setLines]             = useState<OrderLineDetail[]>([]);
   const [loading, setLoading]         = useState(true);
   const [submitting, setSubmitting]   = useState(false);
   const [submitted, setSubmitted]     = useState(false);
   const [sharing, setSharing]         = useState(false);
   const [error, setError]             = useState<string | null>(null);
+  const [deleting, setDeleting]       = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Per-line local edits { qty, unit } — applied on submit
   const [lineEdits, setLineEdits] = useState<Map<number, { qty: string; unit: string }>>(new Map());
@@ -278,6 +282,20 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
       if (e?.name !== 'AbortError') setError('Could not share. Try again.');
     } finally {
       setSharing(false);
+    }
+  };
+
+  // ── Delete order ──────────────────────────────────────────────────────────
+
+  const handleDeleteOrder = async () => {
+    setDeleting(true); setError(null);
+    try {
+      await deleteOrder(order.id);
+      onDeleted();
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to delete order');
+      setDeleting(false);
+      setConfirmDelete(false);
     }
   };
 
@@ -441,7 +459,36 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted }) => {
       </div>
 
       {/* ── Footer ── */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto p-4 bg-white border-t border-slate-100 shadow-lg">
+      <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto p-4 bg-white border-t border-slate-100 shadow-lg space-y-2">
+        {/* Delete order — Owner only, any status */}
+        {user.role === 'Owner' && (
+          confirmDelete ? (
+            <div className="flex items-center gap-2 justify-center py-1">
+              <span className="text-xs text-slate-500 font-semibold">Delete entire order?</span>
+              <button
+                onClick={handleDeleteOrder}
+                disabled={deleting}
+                className="text-xs font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 px-3 py-1.5 rounded-xl hover:bg-rose-50 disabled:opacity-40 transition-colors"
+              >
+                {deleting ? 'Deleting...' : 'Yes, delete'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-xs font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 px-3 py-1.5 rounded-xl hover:bg-slate-100 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="w-full py-2.5 rounded-2xl border border-rose-200 text-rose-500 font-black text-xs uppercase tracking-widest hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              Delete Order
+            </button>
+          )
+        )}
         {showSubmit && (
           <button
             onClick={handleSubmit}
