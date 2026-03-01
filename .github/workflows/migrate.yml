@@ -27,9 +27,9 @@ jobs:
           const { Client } = require('pg');
 
           const client = new Client({
-            host: 'aws-0-us-east-1.pooler.supabase.com',
+            host: 'db.qnpnisokvcsiysiakayr.supabase.co',
             port: 5432,
-            user: 'postgres.qnpnisokvcsiysiakayr',
+            user: 'postgres',
             password: process.env.SUPABASE_DB_PASSWORD,
             database: 'postgres',
             ssl: { rejectUnauthorized: false },
