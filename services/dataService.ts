@@ -8,7 +8,7 @@ export const dataService = {
 
   getUsers: async (): Promise<User[]> => {
     const { data, error } = await supabase
-      .from('users')
+      .from('app_users')
       .select('*')
       .order('name');
     if (error) console.error('getUsers error:', error);
@@ -17,17 +17,17 @@ export const dataService = {
   },
 
   saveUser: async (user: User): Promise<void> => {
-    const { error } = await supabase.from('users').insert(user);
+    const { error } = await supabase.from('app_users').insert(user);
     if (error) throw new Error(error.message);
   },
 
   updateUser: async (user: User): Promise<void> => {
-    const { error } = await supabase.from('users').update(user).eq('id', user.id);
+    const { error } = await supabase.from('app_users').update(user).eq('id', user.id);
     if (error) throw new Error(error.message);
   },
 
   deleteUser: async (userId: string): Promise<void> => {
-    const { error } = await supabase.from('users').delete().eq('id', userId);
+    const { error } = await supabase.from('app_users').delete().eq('id', userId);
     if (error) throw new Error(error.message);
   },
 
