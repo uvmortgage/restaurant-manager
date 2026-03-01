@@ -17,7 +17,7 @@ export async function fetchProducts(): Promise<Product[]> {
 export async function fetchAllProducts(): Promise<Product[]> {
   const { data, error } = await supabase
     .from('products')
-    .select('*, categories(name, sort_order), vendors(name, code)')
+    .select('*, categories(name, sort_order, order_type), vendors(name, code)')
     .order('name');
 
   if (error) throw new Error(error.message);

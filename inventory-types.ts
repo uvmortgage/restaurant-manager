@@ -10,6 +10,7 @@ export interface Category {
   id: number;
   name: string;          // e.g. "PRODUCE", "MEATS", "SEA FOOD"
   sort_order: number;
+  order_type?: string;   // 'WEEKLY_FOOD' | 'BAR' | 'IBG'
   created_at: string;
 }
 
@@ -42,7 +43,7 @@ export interface Product {
   created_at: string;
 
   // Joined fields — populated when using select('*, categories(name), vendors(name)')
-  categories?: { name: string; sort_order?: number };
+  categories?: { name: string; sort_order?: number; order_type?: string };
   vendors?: { name: string; code?: string };
 }
 
