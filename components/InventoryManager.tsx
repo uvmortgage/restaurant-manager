@@ -64,6 +64,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const [showTypePickerFor, setShowTypePickerFor] = useState(false);
   const [deletingOrderId, setDeletingOrderId] = useState<number | null>(null);
   const [confirmDeleteOrderId, setConfirmDeleteOrderId] = useState<number | null>(null);
+  const [deleteOrderError, setDeleteOrderError] = useState<string | null>(null);
 
   // ── Products tab state ────────────────────────────────────────────────────
   const [products, setProducts] = useState<Product[]>([]);
@@ -141,11 +142,12 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const handleDeleteOrder = async (orderId: number) => {
     setDeletingOrderId(orderId);
     setConfirmDeleteOrderId(null);
+    setDeleteOrderError(null);
     try {
       await deleteOrder(orderId);
       setOrders((prev) => prev.filter((o) => Number(o.id) !== orderId));
-    } catch {
-      // silently fail — list will still show the order
+    } catch (e: any) {
+      setDeleteOrderError(e.message ?? 'Failed to delete order');
     } finally {
       setDeletingOrderId(null);
     }
@@ -434,6 +436,15 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                   Cancel
                 </button>
               </div>
+            </div>
+          )}
+
+          {deleteOrderError && (
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 flex items-center justify-between gap-2">
+              <p className="text-rose-700 font-semibold text-xs">{deleteOrderError}</p>
+              <button onClick={() => setDeleteOrderError(null)} className="text-rose-400 hover:text-rose-600 shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
             </div>
           )}
 
