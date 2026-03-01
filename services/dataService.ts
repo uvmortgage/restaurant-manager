@@ -1,7 +1,8 @@
 
 import { supabase } from './supabaseClient';
 import { User, Transaction, Receipt, CateringEvent } from '../types';
-import { INITIAL_USERS } from '../constants';
+
+const ADMIN_EMAIL = 'sri7576@gmail.com';
 
 export const dataService = {
   // ── Users ────────────────────────────────────────────────────────────────────
@@ -12,13 +13,35 @@ export const dataService = {
       .select('*')
       .order('name');
     if (error) console.error('getUsers error:', error);
-    if (!data || data.length === 0) return INITIAL_USERS;
-    return data as User[];
+    return (data ?? []) as User[];
   },
 
-  saveUser: async (user: User): Promise<void> => {
-    const { error } = await supabase.from('app_users').insert(user);
+  getUserByEmail: async (email: string): Promise<User | null> => {
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('*')
+      .eq('email', email)
+      .single();
+    if (error || !data) return null;
+    return data as User;
+  },
+
+  createUserFromAuth: async (authUser: { id: string; name: string; email: string; photo?: string }): Promise<User> => {
+    const newUser: User = {
+      id: authUser.id,
+      name: authUser.name,
+      email: authUser.email,
+      role: authUser.email === ADMIN_EMAIL ? 'Owner' : 'User',
+      status: 'Active',
+      photo: authUser.photo,
+    };
+    const { data, error } = await supabase
+      .from('app_users')
+      .insert(newUser)
+      .select()
+      .single();
     if (error) throw new Error(error.message);
+    return data as User;
   },
 
   updateUser: async (user: User): Promise<void> => {

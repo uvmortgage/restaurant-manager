@@ -5,8 +5,8 @@
 CREATE TABLE IF NOT EXISTS ibgsc.app_users (
   id     TEXT PRIMARY KEY,
   name   TEXT NOT NULL,
-  role   TEXT NOT NULL,
-  pin    TEXT NOT NULL,
+  email  TEXT UNIQUE NOT NULL,
+  role   TEXT NOT NULL DEFAULT 'User',
   status TEXT NOT NULL DEFAULT 'Active',
   photo  TEXT
 );
@@ -54,9 +54,9 @@ CREATE TABLE IF NOT EXISTS ibgsc.catering_events (
 
 -- Enable Row Level Security (open read/write for anon key; tighten as needed)
 ALTER TABLE ibgsc.app_users        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ibgsc.transactions    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ibgsc.receipts        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ibgsc.catering_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ibgsc.transactions     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ibgsc.receipts         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ibgsc.catering_events  ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "allow_all_app_users"       ON ibgsc.app_users        FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_transactions"    ON ibgsc.transactions     FOR ALL USING (true) WITH CHECK (true);

@@ -1,11 +1,11 @@
 
-export type UserRole = 'Manager' | 'Dish Washer' | 'Food Runner' | 'Front Staff' | 'Owner';
+export type UserRole = 'Owner' | 'Manager' | 'Dish Washer' | 'Food Runner' | 'Front Staff' | 'User';
 
 export interface User {
   id: string;
   name: string;
+  email: string;
   role: UserRole;
-  pin: string;
   status: 'Active' | 'Inactive';
   photo?: string;
 }
