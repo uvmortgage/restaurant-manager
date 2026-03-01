@@ -49,12 +49,20 @@ export interface Product {
 // ── Orders ────────────────────────────────────────────────────────────────────
 
 export type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'SENT';
+export type OrderType = 'WEEKLY_FOOD' | 'BAR' | 'IBG';
+
+export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
+  WEEKLY_FOOD: 'Weekly Food',
+  BAR: 'Bar',
+  IBG: 'IBG Order',
+};
 
 export interface Order {
   id: number;                       // integer serial
   order_date?: string;              // DATE — auto-set to CURRENT_DATE by DB default
   due_date: string;                 // ISO date YYYY-MM-DD — when supplier needs it
   status: OrderStatus | string;     // default 'DRAFT'
+  order_type?: OrderType | string;  // 'WEEKLY_FOOD' | 'BAR' | 'IBG', default 'WEEKLY_FOOD'
   submitted_by?: string;            // display name (denormalised TEXT column)
   submitted_by_id?: number;         // FK → ibgsc.users.id
   placed_by_id?: number;

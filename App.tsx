@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { User, Transaction, Receipt, CateringEvent, AppState } from './types';
-import { Order } from './inventory-types';
+import { Order, OrderType } from './inventory-types';
 import { dataService } from './services/dataService';
 import Dashboard from './components/Dashboard';
 import CashManager from './components/CashManager';
@@ -60,6 +60,7 @@ const App: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<CateringEvent | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedOrderType, setSelectedOrderType] = useState<OrderType>('WEEKLY_FOOD');
   const [isInitializing, setIsInitializing] = useState(true);
   const [authError, setAuthError] = useState<string | undefined>();
 
@@ -396,7 +397,10 @@ const App: React.FC = () => {
         return (
           <InventoryManager
             user={state.currentUser!}
-            onCreateOrder={() => setCurrentScreen('CREATE_ORDER')}
+            onCreateOrder={(orderType) => {
+              setSelectedOrderType(orderType);
+              setCurrentScreen('CREATE_ORDER');
+            }}
             onViewOrder={(order) => {
               setSelectedOrder(order);
               setCurrentScreen('ORDER_REVIEW');
@@ -409,6 +413,7 @@ const App: React.FC = () => {
         return (
           <CreateOrderForm
             user={state.currentUser!}
+            orderType={selectedOrderType}
             onSubmit={handleOrderCreated}
             onCancel={() => setCurrentScreen('INVENTORY_MANAGER')}
           />

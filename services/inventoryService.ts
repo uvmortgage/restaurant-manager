@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { Product, Order, OrderLine, OrderLineDetail, Vendor } from '../inventory-types';
+import { Product, Order, OrderLine, OrderLineDetail, Vendor, Category } from '../inventory-types';
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
@@ -8,6 +8,16 @@ export async function fetchProducts(): Promise<Product[]> {
     .from('products')
     .select('*, categories(name, sort_order), vendors(name, code)')
     .eq('is_active', true)
+    .order('name');
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Product[];
+}
+
+export async function fetchAllProducts(): Promise<Product[]> {
+  const { data, error } = await supabase
+    .from('products')
+    .select('*, categories(name, sort_order), vendors(name, code)')
     .order('name');
 
   if (error) throw new Error(error.message);
@@ -24,11 +34,51 @@ export async function fetchVendors(): Promise<Vendor[]> {
   return (data ?? []) as Vendor[];
 }
 
+export async function fetchCategories(): Promise<Category[]> {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('*')
+    .order('sort_order');
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Category[];
+}
+
 export async function updateProductVendor(productId: number, vendorId: number): Promise<void> {
   const { error } = await supabase
     .from('products')
     .update({ vendor_id: vendorId })
     .eq('id', productId);
+  if (error) throw new Error(error.message);
+}
+
+export async function createProduct(
+  payload: Pick<Product, 'name' | 'category_id' | 'vendor_id' | 'unit'> & { notes?: string }
+): Promise<Product> {
+  const { data, error } = await supabase
+    .from('products')
+    .insert({ ...payload, is_active: true })
+    .select('*, categories(name, sort_order), vendors(name, code)')
+    .single();
+  if (error) throw new Error(error.message);
+  return data as Product;
+}
+
+export async function updateProduct(
+  id: number,
+  payload: Partial<Pick<Product, 'name' | 'category_id' | 'vendor_id' | 'unit' | 'notes' | 'is_active'>>
+): Promise<void> {
+  const { error } = await supabase
+    .from('products')
+    .update(payload)
+    .eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function softDeleteProduct(id: number): Promise<void> {
+  const { error } = await supabase
+    .from('products')
+    .update({ is_active: false })
+    .eq('id', id);
   if (error) throw new Error(error.message);
 }
 

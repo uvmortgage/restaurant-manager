@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { Product, Order, OrderLine, Vendor } from '../inventory-types';
+import { Product, Order, OrderLine, Vendor, OrderType, ORDER_TYPE_LABELS } from '../inventory-types';
 import { fetchProducts, fetchVendors, createOrder, createOrderLines, updateProductVendor } from '../services/inventoryService';
 
 interface SelectionState {
@@ -18,6 +18,7 @@ interface VendorOverride {
 
 interface Props {
   user: User;
+  orderType: OrderType;
   onSubmit: (order: Order) => void;
   onCancel: () => void;
   // "Add items to existing order" mode
@@ -33,7 +34,7 @@ function fmtOrderDate(iso: string) {
 
 const PRESET_QTYS = [1, 2, 3, 4, 5, 6, 10, 12, 24, 48];
 
-const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel, existingOrder, excludeProductIds, onItemsAdded }) => {
+const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel, existingOrder, excludeProductIds, onItemsAdded }) => {
   const isAddMode = !!existingOrder;
   const [dueDate, setDueDate] = useState(existingOrder?.due_date ?? '');
   const [notes, setNotes] = useState(existingOrder?.notes ?? '');
@@ -162,6 +163,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel, existingOr
           submitted_by: user.name,
           submitted_at: new Date().toISOString(),
           status: 'DRAFT',
+          order_type: orderType,
           notes: notes.trim() || undefined,
         };
 
@@ -206,7 +208,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, onSubmit, onCancel, existingOr
         </button>
         <div className="flex-1">
           <h1 className="text-lg font-black text-slate-900 tracking-tight">
-            {isAddMode ? 'Add Items' : 'New Order Draft'}
+            {isAddMode ? 'Add Items' : `New ${ORDER_TYPE_LABELS[orderType]} Order`}
           </h1>
           <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">
             {selectedCount > 0 ? `${selectedCount} product${selectedCount > 1 ? 's' : ''} selected` : 'Select products below'}
