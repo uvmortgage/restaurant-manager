@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient';
 import { User, Transaction, Receipt, CateringEvent } from '../types';
 
-const ADMIN_EMAIL = 'sri7576@gmail.com';
+const OWNER_EMAILS = new Set(['sri7576@gmail.com', 'Sree.m2608@gmail.com']);
 
 export const dataService = {
   // ── Users ────────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ export const dataService = {
       id: authUser.id,
       name: authUser.name,
       email: authUser.email,
-      role: authUser.email === ADMIN_EMAIL ? 'Owner' : 'User',
+      role: OWNER_EMAILS.has(authUser.email) ? 'Owner' : 'User',
       status: 'Active',
       photo: authUser.photo,
     };

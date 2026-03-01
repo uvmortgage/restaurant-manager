@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User } from '../types';
 import { Order, OrderType, ORDER_TYPE_LABELS, Product, Vendor, Category } from '../inventory-types';
 import {
@@ -69,6 +69,8 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const [prodLoading, setProdLoading] = useState(false);
   const [prodError, setProdError] = useState<string | null>(null);
   const [prodSearch, setProdSearch] = useState('');
+  const [prodTypeFilter, setProdTypeFilter] = useState<OrderTypeFilter>('ALL');
+  const [prodCategoryFilter, setProdCategoryFilter] = useState<number | 'ALL'>('ALL');
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState<ProductFormState>(EMPTY_FORM);
   const [addSaving, setAddSaving] = useState(false);
@@ -148,11 +150,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
 
   // ── New order handler ──────────────────────────────────────────────────────
   const handleNewOrder = () => {
-    if (typeFilter !== 'ALL') {
-      onCreateOrder(typeFilter as OrderType);
-    } else {
-      setShowTypePickerFor(true);
-    }
+    setShowTypePickerFor(true);
   };
 
   // ── Product handlers ───────────────────────────────────────────────────────
@@ -262,9 +260,61 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     }
   };
 
-  const filteredProducts = products.filter((p) =>
-    !prodSearch || p.name.toLowerCase().includes(prodSearch.toLowerCase())
-  );
+  // Build category id → order_type map for fast lookup
+  const catOrderTypeMap = useMemo(() => {
+    const m: Record<number, string> = {};
+    categories.forEach((c) => { m[c.id] = c.order_type ?? 'WEEKLY_FOOD'; });
+    return m;
+  }, [categories]);
+
+  const filteredProducts = products.filter((p) => {
+    if (prodSearch && !p.name.toLowerCase().includes(prodSearch.toLowerCase())) return false;
+    if (prodCategoryFilter !== 'ALL' && p.category_id !== prodCategoryFilter) return false;
+    if (prodTypeFilter !== 'ALL') {
+      const ot = p.categories?.order_type ?? catOrderTypeMap[p.category_id] ?? 'WEEKLY_FOOD';
+      if (ot !== prodTypeFilter) return false;
+    }
+    return true;
+  });
+
+  // Group products: order_type → category_name → products[]
+  const groupedProducts = useMemo(() => {
+    const typeOrder: OrderType[] = ['WEEKLY_FOOD', 'BAR', 'IBG'];
+    const groups: Record<string, { catSortOrder: number; products: Product[] }[]> = {};
+
+    typeOrder.forEach((ot) => {
+      const forType = filteredProducts.filter((p) => {
+        const pot = p.categories?.order_type ?? catOrderTypeMap[p.category_id] ?? 'WEEKLY_FOOD';
+        return pot === ot;
+      });
+      if (forType.length === 0) return;
+
+      // Group by category within this order type
+      const byCategory: Record<string, { catSortOrder: number; products: Product[] }> = {};
+      forType.forEach((p) => {
+        const catName = p.categories?.name ?? 'Uncategorized';
+        if (!byCategory[catName]) {
+          byCategory[catName] = { catSortOrder: p.categories?.sort_order ?? 99, products: [] };
+        }
+        byCategory[catName].products.push(p);
+      });
+
+      groups[ot] = Object.entries(byCategory)
+        .map(([, v]) => v)
+        .sort((a, b) => a.catSortOrder - b.catSortOrder);
+    });
+
+    return groups;
+  }, [filteredProducts, catOrderTypeMap]);
+
+  // Categories shown as filter pills (based on selected order type)
+  const categoryPills = useMemo(() => {
+    if (prodTypeFilter === 'ALL') return categories;
+    return categories.filter((c) => (c.order_type ?? 'WEEKLY_FOOD') === prodTypeFilter);
+  }, [categories, prodTypeFilter]);
+
+  // Categories filtered to the current product type filter (for Add form dropdown)
+  const filteredCategories = categoryPills;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -454,6 +504,52 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
       {/* ── PRODUCTS TAB ─────────────────────────────────────────────────────── */}
       {activeTab === 'products' && (
         <div className="flex-1 p-4 space-y-3">
+          {/* Order type filter pills */}
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG'] as OrderTypeFilter[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => { setProdTypeFilter(t); setProdCategoryFilter('ALL'); setAddForm(EMPTY_FORM); }}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${
+                  prodTypeFilter === t
+                    ? 'bg-teal-600 text-white border-teal-600'
+                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                {t === 'ALL' ? 'All' : `${ORDER_TYPE_ICONS[t]} ${ORDER_TYPE_LABELS[t as OrderType]}`}
+              </button>
+            ))}
+          </div>
+
+          {/* Category filter pills */}
+          {categoryPills.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <button
+                onClick={() => setProdCategoryFilter('ALL')}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${
+                  prodCategoryFilter === 'ALL'
+                    ? 'bg-slate-700 text-white border-slate-700'
+                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                All Categories
+              </button>
+              {categoryPills.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setProdCategoryFilter(c.id)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${
+                    prodCategoryFilter === c.id
+                      ? 'bg-slate-700 text-white border-slate-700'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Add Product form */}
           {showAddForm && (
             <div className="bg-white rounded-2xl border border-teal-200 shadow-sm p-4 space-y-3">
@@ -476,7 +572,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                     className="border border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
                   >
                     <option value="">Category *</option>
-                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {filteredCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                   <select
                     value={addForm.vendor_id}
@@ -542,141 +638,175 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
               <p className="text-rose-700 font-semibold text-sm">{prodError}</p>
               <button onClick={loadProducts} className="mt-3 text-rose-600 text-xs font-bold underline">Try again</button>
             </div>
+          ) : Object.keys(groupedProducts).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
+              <div className="w-14 h-14 bg-teal-50 rounded-2xl flex items-center justify-center text-teal-400 text-2xl">📦</div>
+              <p className="text-slate-700 font-bold text-sm">No products found</p>
+              <p className="text-slate-400 text-xs">Try a different filter or add a product</p>
+            </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
-                </span>
-                <span className="text-[10px] text-slate-400 font-medium">
-                  {filteredProducts.filter((p) => !p.is_active).length} inactive
-                </span>
-              </div>
-              <div className="divide-y divide-slate-50">
-                {filteredProducts.length === 0 ? (
-                  <p className="text-center text-slate-400 text-sm font-medium py-8">No products found.</p>
-                ) : (
-                  filteredProducts.map((p) => (
-                    <div key={p.id} className={`p-4 ${!p.is_active ? 'opacity-50' : ''}`}>
-                      {editingId === p.id ? (
-                        /* ── Edit mode ── */
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            value={editForm.name}
-                            onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
-                            className="w-full border border-teal-300 rounded-xl px-3 py-2 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                          />
-                          <div className="grid grid-cols-2 gap-2">
-                            <select
-                              value={editForm.category_id}
-                              onChange={(e) => setEditForm((f) => ({ ...f, category_id: e.target.value }))}
-                              className="border border-slate-200 rounded-xl px-2 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-                            >
-                              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                            <select
-                              value={editForm.vendor_id}
-                              onChange={(e) => setEditForm((f) => ({ ...f, vendor_id: e.target.value }))}
-                              className="border border-slate-200 rounded-xl px-2 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-                            >
-                              {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                            </select>
-                          </div>
-                          <input
-                            type="text"
-                            value={editForm.unit}
-                            onChange={(e) => setEditForm((f) => ({ ...f, unit: e.target.value }))}
-                            placeholder="Unit"
-                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                          />
-                          <input
-                            type="text"
-                            value={editForm.notes}
-                            onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
-                            placeholder="Notes (optional)"
-                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                          />
-                          {editError && (
-                            <p className="text-rose-600 text-xs font-semibold">{editError}</p>
-                          )}
-                          <div className="flex gap-2 pt-1">
-                            <button
-                              onClick={() => handleSaveEdit(p.id)}
-                              disabled={editSaving}
-                              className="flex-1 bg-teal-600 text-white font-black text-xs uppercase tracking-widest py-2 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors"
-                            >
-                              {editSaving ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                              onClick={() => setEditingId(null)}
-                              className="flex-1 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest py-2 rounded-xl hover:bg-slate-200 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
+            /* ── Grouped product list ── */
+            <div className="space-y-4">
+              {(['WEEKLY_FOOD', 'BAR', 'IBG'] as OrderType[])
+                .filter((ot) => groupedProducts[ot]?.length)
+                .map((ot) => {
+                  const typeColor = {
+                    WEEKLY_FOOD: { header: 'bg-teal-600', badge: 'bg-teal-100 text-teal-700', catBg: 'bg-teal-50 text-teal-600' },
+                    BAR:         { header: 'bg-purple-600', badge: 'bg-purple-100 text-purple-700', catBg: 'bg-purple-50 text-purple-600' },
+                    IBG:         { header: 'bg-indigo-600', badge: 'bg-indigo-100 text-indigo-700', catBg: 'bg-indigo-50 text-indigo-600' },
+                  }[ot];
+                  const typeLabel = {
+                    WEEKLY_FOOD: 'Weekly Food Order',
+                    BAR: 'Bar & Front of House',
+                    IBG: 'IBG Order',
+                  }[ot];
+
+                  return (
+                    <div key={ot} className="rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                      {/* Order type header */}
+                      <div className={`${typeColor.header} px-4 py-3 flex items-center justify-between`}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{ORDER_TYPE_ICONS[ot]}</span>
+                          <span className="text-white font-black text-sm uppercase tracking-widest">{typeLabel}</span>
                         </div>
-                      ) : (
-                        /* ── View mode ── */
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-bold text-sm text-slate-800 leading-tight">{p.name}</p>
-                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                              {p.categories?.name && (
-                                <span className="text-[10px] font-bold bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded">
-                                  {p.categories.name}
-                                </span>
-                              )}
-                              {p.vendors?.name && (
-                                <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
-                                  {p.vendors.name}
-                                </span>
-                              )}
-                              <span className="text-[10px] text-slate-400 font-medium">{p.unit}</span>
-                              {!p.is_active && (
-                                <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">
-                                  Inactive
-                                </span>
-                              )}
+                        <span className="text-white/70 text-[10px] font-bold uppercase tracking-wider">
+                          {groupedProducts[ot].reduce((sum, g) => sum + g.products.length, 0)} items
+                        </span>
+                      </div>
+
+                      {/* Category groups */}
+                      {groupedProducts[ot].map((catGroup, gi) => {
+                        const catName = catGroup.products[0]?.categories?.name ?? 'Uncategorized';
+                        return (
+                          <div key={gi}>
+                            {/* Category sub-header */}
+                            <div className={`px-4 py-2 ${typeColor.catBg} border-y border-slate-100 flex items-center justify-between`}>
+                              <span className="text-[11px] font-black uppercase tracking-widest">{catName}</span>
+                              <span className="text-[10px] font-medium opacity-70">{catGroup.products.length}</span>
                             </div>
-                            {p.notes && (
-                              <p className="text-[11px] text-slate-400 mt-1">{p.notes}</p>
-                            )}
+                            {/* Products in category */}
+                            <div className="bg-white divide-y divide-slate-50">
+                              {catGroup.products.map((p) => (
+                                <div key={p.id} className={`p-4 ${!p.is_active ? 'opacity-50' : ''}`}>
+                                  {editingId === p.id ? (
+                                    /* ── Edit mode ── */
+                                    <div className="space-y-2">
+                                      <input
+                                        type="text"
+                                        value={editForm.name}
+                                        onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                                        className="w-full border border-teal-300 rounded-xl px-3 py-2 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                                      />
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <select
+                                          value={editForm.category_id}
+                                          onChange={(e) => setEditForm((f) => ({ ...f, category_id: e.target.value }))}
+                                          className="border border-slate-200 rounded-xl px-2 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                                        >
+                                          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                        </select>
+                                        <select
+                                          value={editForm.vendor_id}
+                                          onChange={(e) => setEditForm((f) => ({ ...f, vendor_id: e.target.value }))}
+                                          className="border border-slate-200 rounded-xl px-2 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                                        >
+                                          {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                        </select>
+                                      </div>
+                                      <input
+                                        type="text"
+                                        value={editForm.unit}
+                                        onChange={(e) => setEditForm((f) => ({ ...f, unit: e.target.value }))}
+                                        placeholder="Unit"
+                                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={editForm.notes}
+                                        onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                                        placeholder="Notes (optional)"
+                                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                                      />
+                                      {editError && (
+                                        <p className="text-rose-600 text-xs font-semibold">{editError}</p>
+                                      )}
+                                      <div className="flex gap-2 pt-1">
+                                        <button
+                                          onClick={() => handleSaveEdit(p.id)}
+                                          disabled={editSaving}
+                                          className="flex-1 bg-teal-600 text-white font-black text-xs uppercase tracking-widest py-2 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                                        >
+                                          {editSaving ? 'Saving...' : 'Save'}
+                                        </button>
+                                        <button
+                                          onClick={() => setEditingId(null)}
+                                          className="flex-1 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest py-2 rounded-xl hover:bg-slate-200 transition-colors"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    /* ── View mode ── */
+                                    <div className="flex items-start gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <p className="font-bold text-sm text-slate-800 leading-tight">{p.name}</p>
+                                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                          {p.vendors?.name && (
+                                            <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                                              {p.vendors.name}
+                                            </span>
+                                          )}
+                                          <span className="text-[10px] text-slate-400 font-medium">{p.unit}</span>
+                                          {!p.is_active && (
+                                            <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">
+                                              Inactive
+                                            </span>
+                                          )}
+                                        </div>
+                                        {p.notes && (
+                                          <p className="text-[11px] text-slate-400 mt-1">{p.notes}</p>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          onClick={() => startEdit(p)}
+                                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                                          title="Edit"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                        </button>
+                                        {p.is_active ? (
+                                          <button
+                                            onClick={() => handleDelete(p.id)}
+                                            disabled={deletingId === p.id}
+                                            className="p-2 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors disabled:opacity-40"
+                                            title="Deactivate"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                          </button>
+                                        ) : (
+                                          <button
+                                            onClick={() => handleReactivate(p.id)}
+                                            disabled={deletingId === p.id}
+                                            className="p-2 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors disabled:opacity-40"
+                                            title="Reactivate"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={() => startEdit(p)}
-                              className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-                              title="Edit"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            </button>
-                            {p.is_active ? (
-                              <button
-                                onClick={() => handleDelete(p.id)}
-                                disabled={deletingId === p.id}
-                                className="p-2 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors disabled:opacity-40"
-                                title="Deactivate"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleReactivate(p.id)}
-                                disabled={deletingId === p.id}
-                                className="p-2 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors disabled:opacity-40"
-                                title="Reactivate"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
-                  ))
-                )}
-              </div>
+                  );
+                })}
             </div>
           )}
         </div>
