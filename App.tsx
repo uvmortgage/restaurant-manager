@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
+import { GoogleLogin } from '@react-oauth/google';
 import { User, Transaction, Receipt, CateringEvent, AppState } from './types';
 import { Order } from './inventory-types';
-import { supabase } from './services/supabaseClient';
 import { dataService } from './services/dataService';
 import Dashboard from './components/Dashboard';
 import CashManager from './components/CashManager';
@@ -18,6 +18,18 @@ import AddCateringPaymentForm from './components/AddCateringPaymentForm';
 import InventoryManager from './components/InventoryManager';
 import CreateOrderForm from './components/CreateOrderForm';
 import OrderReview from './components/OrderReview';
+
+const SESSION_KEY = 'restohub_session';
+
+// Decode a Google JWT credential without a library
+const decodeGoogleJwt = (token: string): Record<string, string> | null => {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(payload));
+  } catch {
+    return null;
+  }
+};
 
 type Screen =
   | 'LOGIN'
@@ -50,7 +62,6 @@ const App: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [authError, setAuthError] = useState<string | undefined>();
-  const [signingIn, setSigningIn] = useState(false);
 
   const loadDataAndEnter = async (appUser: User) => {
     try {
@@ -64,65 +75,67 @@ const App: React.FC = () => {
       setCurrentScreen('DASHBOARD');
     } catch (e) {
       console.error('Failed to load data:', e);
+      setAuthError('Failed to load app data. Please try again.');
     }
   };
 
-  const resolveAuthUser = async (authUser: { id: string; email: string; user_metadata: Record<string, string> }): Promise<void> => {
-    let appUser = await dataService.getUserByEmail(authUser.email);
-    if (!appUser) {
-      appUser = await dataService.createUserFromAuth({
-        id: authUser.id,
-        name: authUser.user_metadata?.full_name || authUser.email.split('@')[0],
-        email: authUser.email,
-        photo: authUser.user_metadata?.avatar_url,
-      });
-    }
-    if (appUser.status !== 'Active') {
-      await supabase.auth.signOut();
-      setAuthError('Your account is inactive. Contact the admin.');
-      return;
-    }
-    await loadDataAndEnter(appUser);
-  };
-
+  // Restore session from localStorage on mount
   useEffect(() => {
-    // Check for existing session on mount
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        await resolveAuthUser(session.user as any);
+    const stored = localStorage.getItem(SESSION_KEY);
+    if (stored) {
+      try {
+        const user: User = JSON.parse(stored);
+        loadDataAndEnter(user).finally(() => setIsInitializing(false));
+      } catch {
+        localStorage.removeItem(SESSION_KEY);
+        setIsInitializing(false);
       }
+    } else {
       setIsInitializing(false);
-    });
-
-    // Listen for future auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        setSigningIn(false);
-        await resolveAuthUser(session.user as any);
-      } else if (event === 'SIGNED_OUT') {
-        setState({ currentUser: null, transactions: [], receipts: [], cateringEvents: [], users: [] });
-        setCurrentScreen('LOGIN');
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    }
   }, []);
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSuccess = async (credentialResponse: { credential?: string }) => {
     setAuthError(undefined);
-    setSigningIn(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    });
-    if (error) {
-      setAuthError(error.message);
-      setSigningIn(false);
+    if (!credentialResponse.credential) {
+      setAuthError('No credential received from Google.');
+      return;
+    }
+
+    const profile = decodeGoogleJwt(credentialResponse.credential);
+    if (!profile?.email) {
+      setAuthError('Could not read profile from Google.');
+      return;
+    }
+
+    try {
+      let appUser = await dataService.getUserByEmail(profile.email);
+      if (!appUser) {
+        appUser = await dataService.createUserFromAuth({
+          id: profile.sub,
+          name: profile.name || profile.email.split('@')[0],
+          email: profile.email,
+          photo: profile.picture,
+        });
+      }
+
+      if (appUser.status !== 'Active') {
+        setAuthError('Your account is inactive. Contact the admin.');
+        return;
+      }
+
+      localStorage.setItem(SESSION_KEY, JSON.stringify(appUser));
+      await loadDataAndEnter(appUser);
+    } catch (e) {
+      console.error('Sign-in error:', e);
+      setAuthError('Sign-in failed. Please try again.');
     }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    localStorage.removeItem(SESSION_KEY);
+    setState({ currentUser: null, transactions: [], receipts: [], cateringEvents: [], users: [] });
+    setCurrentScreen('LOGIN');
   };
 
   const handleTransactionSubmit = async (transaction: Transaction) => {
@@ -175,9 +188,12 @@ const App: React.FC = () => {
     setState(prev => ({
       ...prev,
       users: prev.users.map(u => u.id === userData.id ? userData : u),
-      // Update currentUser if they edited themselves
       currentUser: prev.currentUser?.id === userData.id ? userData : prev.currentUser,
     }));
+    // Keep localStorage in sync if the current user was edited
+    if (state.currentUser?.id === userData.id) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(userData));
+    }
     setCurrentScreen('USER_MANAGER');
     setSelectedUser(null);
   };
@@ -200,9 +216,7 @@ const App: React.FC = () => {
           <div className="absolute top-0 left-0 w-24 h-24 border-8 border-t-indigo-600 rounded-full animate-spin"></div>
         </div>
         <h2 className="text-2xl font-black text-slate-800 tracking-tight mb-2 uppercase">RestoHub</h2>
-        <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] animate-pulse">
-          Loading...
-        </p>
+        <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] animate-pulse">Loading...</p>
       </div>
     );
   }
@@ -225,18 +239,15 @@ const App: React.FC = () => {
               <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">Restaurant Management Portal</p>
             </div>
 
-            <div className="w-full max-w-xs space-y-4">
-              <button
-                onClick={handleGoogleSignIn}
-                disabled={signingIn}
-                className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 rounded-2xl py-4 px-6 shadow-sm hover:shadow-md hover:border-slate-300 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                <span className="font-bold text-slate-700 text-sm">
-                  {signingIn ? 'Redirecting to Google...' : 'Sign in with Google'}
-                </span>
-              </button>
-
+            <div className="w-full max-w-xs space-y-4 flex flex-col items-center">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setAuthError('Google sign-in failed. Please try again.')}
+                useOneTap
+                shape="pill"
+                size="large"
+                text="signin_with"
+              />
               {authError && (
                 <p className="text-center text-xs text-rose-500 font-medium">{authError}</p>
               )}
