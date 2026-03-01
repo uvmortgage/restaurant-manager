@@ -1,11 +1,11 @@
 
-export type UserRole = 'Manager' | 'Dish Washer' | 'Food Runner' | 'Front Staff' | 'Owner';
+export type UserRole = 'Owner' | 'Manager' | 'Dish Washer' | 'Food Runner' | 'Front Staff' | 'User';
 
 export interface User {
   id: string;
   name: string;
+  email: string;
   role: UserRole;
-  pin: string;
   status: 'Active' | 'Inactive';
   photo?: string;
 }
@@ -62,18 +62,10 @@ export interface CateringEvent {
   payment_logged_by?: string;
 }
 
-export interface CloudConfig {
-  syncUrl: string;
-  apiKey: string;
-  lastSyncedAt?: string;
-}
-
 export interface AppState {
   currentUser: User | null;
   transactions: Transaction[];
   receipts: Receipt[];
   cateringEvents: CateringEvent[];
   users: User[];
-  cloudConfig: CloudConfig | null;
-  isSyncing: boolean;
 }

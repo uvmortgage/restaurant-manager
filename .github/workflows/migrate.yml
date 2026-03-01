@@ -1,0 +1,26 @@
+name: Run DB Migration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/understand-repo-XsHjD"]
+    paths: ["migrations/**", ".github/workflows/migrate.yml", "scripts/migrate.js"]
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - run: npm install --include=dev
+
+      - name: Run migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: npm run migrate

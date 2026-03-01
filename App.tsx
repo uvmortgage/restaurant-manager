@@ -1,211 +1,169 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { User, Transaction, Receipt, CateringEvent, AppState, CloudConfig } from './types';
-import { storageService } from './services/storageService';
-import { cloudService } from './services/cloudService';
-import PinPad from './components/PinPad';
+import React, { useState, useEffect } from 'react';
+import { GoogleLogin } from '@react-oauth/google';
+import { User, Transaction, Receipt, CateringEvent, AppState } from './types';
+import { Order, OrderType } from './inventory-types';
+import { dataService } from './services/dataService';
 import Dashboard from './components/Dashboard';
 import CashManager from './components/CashManager';
 import ReceiptsManager from './components/ReceiptsManager';
 import CateringManager from './components/CateringManager';
 import UserManager from './components/UserManager';
 import UserForm from './components/UserForm';
-import CloudSettings from './components/CloudSettings';
 import AddCashForm from './components/AddCashForm';
 import PaySalaryForm from './components/PaySalaryForm';
 import AddReceiptForm from './components/AddReceiptForm';
 import AddCateringForm from './components/AddCateringForm';
 import AddCateringPaymentForm from './components/AddCateringPaymentForm';
+import InventoryManager from './components/InventoryManager';
+import CreateOrderForm from './components/CreateOrderForm';
+import OrderReview from './components/OrderReview';
 
-type Screen = 
-  | 'LOGIN' 
-  | 'DASHBOARD' 
-  | 'CASH_MANAGER' 
-  | 'RECEIPTS_MANAGER' 
+const SESSION_KEY = 'restohub_session';
+
+// Decode a Google JWT credential without a library
+const decodeGoogleJwt = (token: string): Record<string, string> | null => {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(payload));
+  } catch {
+    return null;
+  }
+};
+
+type Screen =
+  | 'LOGIN'
+  | 'DASHBOARD'
+  | 'CASH_MANAGER'
+  | 'RECEIPTS_MANAGER'
   | 'CATERING_MANAGER'
   | 'USER_MANAGER'
-  | 'ADD_USER'
   | 'EDIT_USER'
-  | 'CLOUD_SETTINGS'
-  | 'ADD_CASH' 
-  | 'PAY_SALARY' 
+  | 'ADD_CASH'
+  | 'PAY_SALARY'
   | 'ADD_RECEIPT'
   | 'ADD_CATERING'
-  | 'ADD_CATERING_PAYMENT';
+  | 'ADD_CATERING_PAYMENT'
+  | 'INVENTORY_MANAGER'
+  | 'CREATE_ORDER'
+  | 'ORDER_REVIEW';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     currentUser: null,
-    transactions: storageService.getTransactions(),
-    receipts: storageService.getReceipts(),
-    cateringEvents: storageService.getCateringEvents(),
-    users: storageService.getUsers(),
-    cloudConfig: storageService.getCloudConfig(),
-    isSyncing: false,
+    transactions: [],
+    receipts: [],
+    cateringEvents: [],
+    users: [],
   });
   const [currentScreen, setCurrentScreen] = useState<Screen>('LOGIN');
   const [selectedEvent, setSelectedEvent] = useState<CateringEvent | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [loginError, setLoginError] = useState<string | undefined>();
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedOrderType, setSelectedOrderType] = useState<OrderType>('WEEKLY_FOOD');
   const [isInitializing, setIsInitializing] = useState(true);
-  const [syncError, setSyncError] = useState(false);
-  const [initMessage, setInitMessage] = useState('Verifying Cloud Connection...');
+  const [authError, setAuthError] = useState<string | undefined>();
 
-  // Initial Load & Pull Sync
-  useEffect(() => {
-    const initApp = async () => {
-      const cloudConfig = storageService.getCloudConfig();
-      
-      // Load local data immediately to prevent empty states
-      setState(prev => ({
-        ...prev,
-        transactions: storageService.getTransactions(),
-        receipts: storageService.getReceipts(),
-        cateringEvents: storageService.getCateringEvents(),
-        users: storageService.getUsers(),
-        cloudConfig
-      }));
-
-      if (cloudConfig?.syncUrl) {
-        setInitMessage('Fetching Latest Data from Sheet...');
-        setState(prev => ({ ...prev, isSyncing: true }));
-        
-        try {
-          const cloudData = await cloudService.fetchLatest(cloudConfig);
-          if (cloudData) {
-            setInitMessage('Cloud Connected! Syncing Local Store...');
-            const cloudUsers = cloudData.users as User[];
-            
-            setState(prev => {
-              const newState = {
-                ...prev,
-                users: (Array.isArray(cloudUsers) && cloudUsers.length > 0) ? cloudUsers : prev.users,
-                transactions: (Array.isArray(cloudData.transactions) && cloudData.transactions.length > 0) ? (cloudData.transactions as Transaction[]) : prev.transactions,
-                receipts: (Array.isArray(cloudData.receipts) && cloudData.receipts.length > 0) ? (cloudData.receipts as Receipt[]) : prev.receipts,
-                cateringEvents: (Array.isArray(cloudData.cateringEvents) && cloudData.cateringEvents.length > 0) ? (cloudData.cateringEvents as CateringEvent[]) : prev.cateringEvents,
-                isSyncing: false
-              };
-              // Save cloud users to local storage for offline login capability
-              localStorage.setItem('cashpool_users', JSON.stringify(newState.users));
-              return newState;
-            });
-            setSyncError(false);
-          } else {
-            console.warn("Could not reach cloud. Working with local data.");
-            setSyncError(true);
-            setState(prev => ({ ...prev, isSyncing: false }));
-          }
-        } catch (e) {
-          console.error("Critical Cloud Fetch Error:", e);
-          setSyncError(true);
-          setState(prev => ({ ...prev, isSyncing: false }));
-        }
-      }
-
-      // Small delay to ensure splash is visible for UX
-      setTimeout(() => setIsInitializing(false), 1200);
-    };
-
-    initApp();
-  }, []);
-
-  // Sync Logic (Push)
-  const triggerCloudSync = useCallback(async (newState: AppState) => {
-    if (!newState.cloudConfig?.syncUrl) return;
-    
-    setState(prev => ({ ...prev, isSyncing: true }));
-    setSyncError(false);
-    
-    const success = await cloudService.sync(newState.cloudConfig, {
-      transactions: newState.transactions,
-      receipts: newState.receipts,
-      cateringEvents: newState.cateringEvents,
-      users: newState.users
-    });
-    
-    setState(prev => ({ ...prev, isSyncing: false }));
-    setSyncError(!success);
-  }, []);
-
-  const handleManualSync = async () => {
-    if (!state.cloudConfig?.syncUrl) return;
-    setState(prev => ({ ...prev, isSyncing: true }));
-    setSyncError(false);
-    
+  const loadDataAndEnter = async (appUser: User) => {
     try {
-      const cloudData = await cloudService.fetchLatest(state.cloudConfig);
-      if (cloudData) {
-        setState(prev => {
-          const newState = {
-            ...prev,
-            users: (Array.isArray(cloudData.users) && cloudData.users.length > 0) ? (cloudData.users as User[]) : prev.users,
-            transactions: (Array.isArray(cloudData.transactions) && cloudData.transactions.length > 0) ? (cloudData.transactions as Transaction[]) : prev.transactions,
-            receipts: (Array.isArray(cloudData.receipts) && cloudData.receipts.length > 0) ? (cloudData.receipts as Receipt[]) : prev.receipts,
-            cateringEvents: (Array.isArray(cloudData.cateringEvents) && cloudData.cateringEvents.length > 0) ? (cloudData.cateringEvents as CateringEvent[]) : prev.cateringEvents,
-            isSyncing: false
-          };
-          localStorage.setItem('cashpool_users', JSON.stringify(newState.users));
-          return newState;
-        });
-      } else {
-        setSyncError(true);
-        setState(prev => ({ ...prev, isSyncing: false }));
-      }
+      const [transactions, receipts, cateringEvents, users] = await Promise.all([
+        dataService.getTransactions(),
+        dataService.getReceipts(),
+        dataService.getCateringEvents(),
+        dataService.getUsers(),
+      ]);
+      setState({ currentUser: appUser, transactions, receipts, cateringEvents, users });
+      setCurrentScreen('DASHBOARD');
     } catch (e) {
-      setSyncError(true);
-      setState(prev => ({ ...prev, isSyncing: false }));
+      console.error('Failed to load data:', e);
+      setAuthError('Failed to load app data. Please try again.');
     }
   };
 
-  const handleLogin = (pin: string) => {
-    // SECURITY: Trim and stringify to handle auto-converted numeric fields from Google Sheets
-    const user = state.users.find(u => 
-      String(u.pin).trim() === pin.trim() && 
-      u.status === 'Active'
-    );
-    
-    if (user) {
-      setState(prev => ({ ...prev, currentUser: user }));
-      setCurrentScreen('DASHBOARD');
-      setLoginError(undefined);
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem(SESSION_KEY);
+    if (stored) {
+      try {
+        const user: User = JSON.parse(stored);
+        loadDataAndEnter(user).finally(() => setIsInitializing(false));
+      } catch {
+        localStorage.removeItem(SESSION_KEY);
+        setIsInitializing(false);
+      }
     } else {
-      setLoginError('Invalid PIN. Check connection or credentials.');
+      setIsInitializing(false);
+    }
+  }, []);
+
+  const handleGoogleSuccess = async (credentialResponse: { credential?: string }) => {
+    setAuthError(undefined);
+    if (!credentialResponse.credential) {
+      setAuthError('No credential received from Google.');
+      return;
+    }
+
+    const profile = decodeGoogleJwt(credentialResponse.credential);
+    if (!profile?.email) {
+      setAuthError('Could not read profile from Google.');
+      return;
+    }
+
+    try {
+      let appUser = await dataService.getUserByEmail(profile.email);
+      if (!appUser) {
+        appUser = await dataService.createUserFromAuth({
+          id: profile.sub,
+          name: profile.name || profile.email.split('@')[0],
+          email: profile.email,
+          photo: profile.picture,
+        });
+      }
+
+      if (appUser.status !== 'Active') {
+        setAuthError('Your account is inactive. Contact the admin.');
+        return;
+      }
+
+      localStorage.setItem(SESSION_KEY, JSON.stringify(appUser));
+      await loadDataAndEnter(appUser);
+    } catch (e) {
+      console.error('Sign-in error:', e);
+      setAuthError('Sign-in failed. Please try again.');
     }
   };
 
   const handleLogout = () => {
-    setState(prev => ({ ...prev, currentUser: null }));
+    localStorage.removeItem(SESSION_KEY);
+    setState({ currentUser: null, transactions: [], receipts: [], cateringEvents: [], users: [] });
     setCurrentScreen('LOGIN');
   };
 
-  const handleTransactionSubmit = (transaction: Transaction) => {
-    const updatedTransactions = storageService.saveTransaction(transaction);
-    const newState = { ...state, transactions: updatedTransactions };
-    setState(newState);
-    triggerCloudSync(newState);
+  const handleTransactionSubmit = async (transaction: Transaction) => {
+    await dataService.saveTransaction(transaction);
+    setState(prev => ({ ...prev, transactions: [transaction, ...prev.transactions] }));
     setCurrentScreen('CASH_MANAGER');
   };
 
-  const handleReceiptSubmit = (receipt: Receipt) => {
-    const updatedReceipts = storageService.saveReceipt(receipt);
-    const newState = { ...state, receipts: updatedReceipts };
-    setState(newState);
-    triggerCloudSync(newState);
+  const handleReceiptSubmit = async (receipt: Receipt) => {
+    await dataService.saveReceipt(receipt);
+    setState(prev => ({ ...prev, receipts: [receipt, ...prev.receipts] }));
     setCurrentScreen('RECEIPTS_MANAGER');
   };
 
-  const handleCateringSubmit = (event: CateringEvent) => {
-    const updatedEvents = storageService.saveCateringEvent(event);
-    const newState = { ...state, cateringEvents: updatedEvents };
-    setState(newState);
-    triggerCloudSync(newState);
+  const handleCateringSubmit = async (event: CateringEvent) => {
+    await dataService.saveCateringEvent(event);
+    setState(prev => ({ ...prev, cateringEvents: [event, ...prev.cateringEvents] }));
     setCurrentScreen('CATERING_MANAGER');
   };
 
-  const handleCateringPaymentSubmit = (updatedEvent: CateringEvent) => {
-    const updatedEvents = storageService.updateCateringEvent(updatedEvent);
-    let updatedTransactions = state.transactions;
+  const handleCateringPaymentSubmit = async (updatedEvent: CateringEvent) => {
+    await dataService.updateCateringEvent(updatedEvent);
+    const updatedEvents = state.cateringEvents.map(e =>
+      e.id === updatedEvent.id ? updatedEvent : e
+    );
 
+    let updatedTransactions = state.transactions;
     if (updatedEvent.payment_method === 'Cash' || updatedEvent.payment_method === 'Zelle') {
       const transaction: Transaction = {
         id: crypto.randomUUID(),
@@ -217,56 +175,49 @@ const App: React.FC = () => {
         reference_details: `Payment from ${updatedEvent.ordering_person_name}`,
         fund_source: 'Pool',
       };
-      updatedTransactions = storageService.saveTransaction(transaction);
+      await dataService.saveTransaction(transaction);
+      updatedTransactions = [transaction, ...state.transactions];
     }
-    
-    const newState = { ...state, cateringEvents: updatedEvents, transactions: updatedTransactions };
-    setState(newState);
-    triggerCloudSync(newState);
+
+    setState(prev => ({ ...prev, cateringEvents: updatedEvents, transactions: updatedTransactions }));
     setCurrentScreen('CATERING_MANAGER');
     setSelectedEvent(null);
   };
 
-  const handleUserSubmit = (userData: User) => {
-    let updatedUsers;
-    if (currentScreen === 'EDIT_USER') {
-      updatedUsers = storageService.updateUser(userData);
-    } else {
-      updatedUsers = storageService.saveUser(userData);
+  const handleUserSubmit = async (userData: User) => {
+    await dataService.updateUser(userData);
+    setState(prev => ({
+      ...prev,
+      users: prev.users.map(u => u.id === userData.id ? userData : u),
+      currentUser: prev.currentUser?.id === userData.id ? userData : prev.currentUser,
+    }));
+    // Keep localStorage in sync if the current user was edited
+    if (state.currentUser?.id === userData.id) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(userData));
     }
-    const newState = { ...state, users: updatedUsers };
-    setState(newState);
-    triggerCloudSync(newState);
     setCurrentScreen('USER_MANAGER');
     setSelectedUser(null);
   };
 
-  const handleUserDelete = (userId: string) => {
-    const updatedUsers = storageService.deleteUser(userId);
-    const newState = { ...state, users: updatedUsers };
-    setState(newState);
-    triggerCloudSync(newState);
+  const handleUserDelete = async (userId: string) => {
+    await dataService.deleteUser(userId);
+    setState(prev => ({ ...prev, users: prev.users.filter(u => u.id !== userId) }));
   };
 
-  const handleCloudConfigSave = (config: CloudConfig) => {
-    storageService.saveCloudConfig(config);
-    const newState = { ...state, cloudConfig: config };
-    setState(newState);
-    handleManualSync();
-    setCurrentScreen('DASHBOARD');
+  const handleOrderCreated = (order: Order) => {
+    setSelectedOrder(order);
+    setCurrentScreen('ORDER_REVIEW');
   };
 
   if (isInitializing) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
         <div className="relative mb-8">
-           <div className="w-24 h-24 border-8 border-indigo-100 rounded-full"></div>
-           <div className="absolute top-0 left-0 w-24 h-24 border-8 border-t-indigo-600 rounded-full animate-spin"></div>
+          <div className="w-24 h-24 border-8 border-indigo-100 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-24 h-24 border-8 border-t-indigo-600 rounded-full animate-spin"></div>
         </div>
-        <h2 className="text-2xl font-black text-slate-800 tracking-tight mb-2 uppercase">RestoHub Cloud</h2>
-        <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] animate-pulse">
-          {initMessage}
-        </p>
+        <h2 className="text-2xl font-black text-slate-800 tracking-tight mb-2 uppercase">RestoHub</h2>
+        <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] animate-pulse">Loading...</p>
       </div>
     );
   }
@@ -286,23 +237,29 @@ const App: React.FC = () => {
                 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
               </div>
               <h1 className="text-3xl font-black text-slate-900 tracking-tighter">RESTO<span className="text-indigo-600">HUB</span></h1>
-              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">Portal Version 9.0</p>
-              
-              <div className="mt-6 flex items-center justify-center gap-3 bg-white px-4 py-2 rounded-full border border-slate-100 shadow-sm">
-                 <div className={`w-2.5 h-2.5 rounded-full ${syncError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`}></div>
-                 <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                   {syncError ? 'Server Offline' : state.isSyncing ? 'Syncing...' : 'Live Connected'}
-                 </span>
-              </div>
+              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">Restaurant Management Portal</p>
             </div>
-            
-            <PinPad onComplete={handleLogin} error={loginError} />
-            
-            <p className="mt-12 text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center">
-              Secure Staff Gateway Only<br/>Cloud Sync Enabled
+
+            <div className="w-full max-w-xs space-y-4 flex flex-col items-center">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setAuthError('Google sign-in failed. Please try again.')}
+                useOneTap
+                shape="pill"
+                size="large"
+                text="signin_with"
+              />
+              {authError && (
+                <p className="text-center text-xs text-rose-500 font-medium">{authError}</p>
+              )}
+            </div>
+
+            <p className="mt-16 text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center">
+              Authorized Staff Only
             </p>
           </div>
         );
+
       case 'DASHBOARD':
         return (
           <Dashboard
@@ -310,22 +267,11 @@ const App: React.FC = () => {
             transactions={state.transactions}
             receipts={state.receipts}
             cateringEvents={state.cateringEvents}
-            cloudConfig={state.cloudConfig}
-            isSyncing={state.isSyncing}
-            syncError={syncError}
-            onManualSync={handleManualSync}
-            onNavigate={(screen) => setCurrentScreen(screen as any)}
+            onNavigate={(screen) => setCurrentScreen(screen as Screen)}
             onLogout={handleLogout}
           />
         );
-      case 'CLOUD_SETTINGS':
-        return (
-          <CloudSettings
-            config={state.cloudConfig}
-            onSave={handleCloudConfigSave}
-            onBack={() => setCurrentScreen('DASHBOARD')}
-          />
-        );
+
       case 'CASH_MANAGER':
         return (
           <CashManager
@@ -336,6 +282,7 @@ const App: React.FC = () => {
             onBack={() => setCurrentScreen('DASHBOARD')}
           />
         );
+
       case 'RECEIPTS_MANAGER':
         return (
           <ReceiptsManager
@@ -345,6 +292,7 @@ const App: React.FC = () => {
             onBack={() => setCurrentScreen('DASHBOARD')}
           />
         );
+
       case 'CATERING_MANAGER':
         return (
           <CateringManager
@@ -358,11 +306,11 @@ const App: React.FC = () => {
             onBack={() => setCurrentScreen('DASHBOARD')}
           />
         );
+
       case 'USER_MANAGER':
         return (
           <UserManager
             users={state.users}
-            onAddUser={() => setCurrentScreen('ADD_USER')}
             onEditUser={(u) => {
               setSelectedUser(u);
               setCurrentScreen('EDIT_USER');
@@ -371,12 +319,12 @@ const App: React.FC = () => {
             onBack={() => setCurrentScreen('DASHBOARD')}
           />
         );
-      case 'ADD_USER':
+
       case 'EDIT_USER':
-        return (
+        return selectedUser ? (
           <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
             <UserForm
-              user={currentScreen === 'EDIT_USER' ? selectedUser! : undefined}
+              user={selectedUser}
               onSubmit={handleUserSubmit}
               onCancel={() => {
                 setCurrentScreen('USER_MANAGER');
@@ -384,7 +332,8 @@ const App: React.FC = () => {
               }}
             />
           </div>
-        );
+        ) : null;
+
       case 'ADD_CASH':
         return (
           <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -395,6 +344,7 @@ const App: React.FC = () => {
             />
           </div>
         );
+
       case 'PAY_SALARY':
         return (
           <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -406,6 +356,7 @@ const App: React.FC = () => {
             />
           </div>
         );
+
       case 'ADD_RECEIPT':
         return (
           <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -416,6 +367,7 @@ const App: React.FC = () => {
             />
           </div>
         );
+
       case 'ADD_CATERING':
         return (
           <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -426,6 +378,7 @@ const App: React.FC = () => {
             />
           </div>
         );
+
       case 'ADD_CATERING_PAYMENT':
         return (
           <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -439,6 +392,49 @@ const App: React.FC = () => {
             )}
           </div>
         );
+
+      case 'INVENTORY_MANAGER':
+        return (
+          <InventoryManager
+            user={state.currentUser!}
+            onCreateOrder={(orderType) => {
+              setSelectedOrderType(orderType);
+              setCurrentScreen('CREATE_ORDER');
+            }}
+            onViewOrder={(order) => {
+              setSelectedOrder(order);
+              setCurrentScreen('ORDER_REVIEW');
+            }}
+            onBack={() => setCurrentScreen('DASHBOARD')}
+          />
+        );
+
+      case 'CREATE_ORDER':
+        return (
+          <CreateOrderForm
+            user={state.currentUser!}
+            orderType={selectedOrderType}
+            onSubmit={handleOrderCreated}
+            onCancel={() => setCurrentScreen('INVENTORY_MANAGER')}
+          />
+        );
+
+      case 'ORDER_REVIEW':
+        return selectedOrder ? (
+          <OrderReview
+            user={state.currentUser!}
+            order={selectedOrder}
+            onBack={() => {
+              setSelectedOrder(null);
+              setCurrentScreen('INVENTORY_MANAGER');
+            }}
+            onSubmitted={() => {
+              setSelectedOrder(null);
+              setCurrentScreen('INVENTORY_MANAGER');
+            }}
+          />
+        ) : null;
+
       default:
         return null;
     }
