@@ -183,21 +183,12 @@ After adding or changing env vars in Vercel, trigger a **Redeploy** for them to 
 
 All tables live in the `ibgsc` schema of your Supabase project.
 
-### Option A — Supabase SQL Editor (manual, quickest)
-
-1. Open your Supabase project → **SQL Editor**.
-2. Paste and run each migration file in order:
-   - `migrations/001_create_app_tables.sql`
-   - `migrations/002_add_order_type.sql`
-
-Each file is idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) so re-running is safe.
-
-### Option B — Automated migration runner (`npm run migrate`)
+### Automated migration runner — `npm run migrate` (recommended)
 
 `scripts/migrate.js` tracks which migrations have already run in `ibgsc._migrations`
 and only applies new ones. It supports two connection modes tried in order:
 
-#### Mode 1: Supabase Management API (recommended — works everywhere, no direct TCP needed)
+#### Mode 1: Supabase Management API (works everywhere, no direct TCP needed)
 
 ```bash
 SUPABASE_ACCESS_TOKEN=your-pat npm run migrate
@@ -215,6 +206,16 @@ DATABASE_URL=postgres://postgres.xxxxx:password@aws-0-us-east-1.pooler.supabase.
 # Or using just the DB password (runner tries multiple pooler regions automatically)
 SUPABASE_DB_PASSWORD=your-db-password npm run migrate
 ```
+
+### Manual fallback — Supabase SQL Editor
+
+If the automated runner is unavailable, paste and run each file in order via
+**Supabase Dashboard → SQL Editor**:
+
+1. `migrations/001_create_app_tables.sql`
+2. `migrations/002_add_order_type.sql`
+
+Each file is idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) so re-running is safe.
 
 ### Migration files
 
