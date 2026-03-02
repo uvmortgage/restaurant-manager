@@ -213,11 +213,25 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
         <div className="relative mb-8">
-          <div className="w-24 h-24 border-8 border-indigo-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-24 h-24 border-8 border-t-indigo-600 rounded-full animate-spin"></div>
+          <div className="w-24 h-24 border-8 border-ibg-100 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-24 h-24 border-8 border-t-ibg-600 rounded-full animate-spin"></div>
         </div>
-        <h2 className="text-2xl font-black text-slate-800 tracking-tight mb-2 uppercase">RestoHub</h2>
-        <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] animate-pulse">Loading...</p>
+        <div className="flex flex-col items-center gap-1">
+          <div className="flex items-center gap-2 mb-1">
+            <svg width="20" height="20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="16" y="2" width="5" height="11" rx="2.5" fill="#952D34"/>
+              <rect x="16" y="15" width="5" height="11" rx="2.5" fill="#7a2328"/>
+              <rect x="16" y="28" width="5" height="10" rx="2.5" fill="#952D34"/>
+              <rect x="13" y="12" width="11" height="3.5" rx="1.75" fill="#b83540"/>
+              <rect x="13" y="25" width="11" height="3.5" rx="1.75" fill="#b83540"/>
+              <path d="M21 7.5 Q30 3 28 13 Q23 9 21 7.5Z" fill="#b83540"/>
+              <path d="M16 21 Q7 16 9 27 Q14 23 16 21Z" fill="#b83540"/>
+            </svg>
+            <span className="text-ibg-600 font-black text-xs uppercase tracking-[0.2em]">Inchin's Bamboo Garden</span>
+          </div>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">RestoHub</h2>
+          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] animate-pulse">Loading...</p>
+        </div>
       </div>
     );
   }
@@ -232,12 +246,24 @@ const App: React.FC = () => {
       case 'LOGIN':
         return (
           <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-slate-50 relative overflow-hidden">
-            <div className="mb-12 text-center animate-fadeIn relative z-10">
-              <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-indigo-200">
-                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            <div className="mb-10 text-center animate-fadeIn relative z-10">
+              {/* Bamboo Logo */}
+              <div className="w-24 h-24 bg-ibg-600 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-xl shadow-ibg-200">
+                <svg width="52" height="52" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="14" y="2" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.95"/>
+                  <rect x="14" y="15" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.8"/>
+                  <rect x="14" y="28" width="5" height="10" rx="2.5" fill="white" fillOpacity="0.95"/>
+                  <rect x="11" y="12" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.6"/>
+                  <rect x="11" y="25" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.6"/>
+                  <path d="M19 7.5 Q28 3 26 13 Q21 9 19 7.5Z" fill="white" fillOpacity="0.7"/>
+                  <path d="M14 21 Q5 16 7 27 Q12 23 14 21Z" fill="white" fillOpacity="0.7"/>
+                </svg>
               </div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tighter">RESTO<span className="text-indigo-600">HUB</span></h1>
-              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">Restaurant Management Portal</p>
+              <div className="space-y-1">
+                <p className="text-ibg-600 font-black text-[11px] uppercase tracking-[0.25em]">Inchin's Bamboo Garden</p>
+                <h1 className="text-3xl font-black text-slate-900 tracking-tight">RestoHub</h1>
+                <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">South Charlotte · Management Portal</p>
+              </div>
             </div>
 
             <div className="w-full max-w-xs space-y-4 flex flex-col items-center">
@@ -444,11 +470,17 @@ const App: React.FC = () => {
     }
   };
 
+  const isFullWidth = ['INVENTORY_MANAGER', 'CREATE_ORDER', 'ORDER_REVIEW'].includes(currentScreen);
+
   return (
-    <div className="min-h-screen max-w-lg mx-auto bg-slate-50 shadow-2xl relative flex flex-col overflow-x-hidden">
+    <div className={`min-h-screen bg-slate-50 relative flex flex-col overflow-x-hidden ${isFullWidth ? '' : 'max-w-lg mx-auto shadow-2xl'}`}>
       {renderScreen()}
-      <div className="fixed -top-40 -left-40 w-96 h-96 bg-indigo-100 rounded-full blur-[100px] opacity-40 pointer-events-none z-[-1]"></div>
-      <div className="fixed -bottom-40 -right-40 w-96 h-96 bg-emerald-100 rounded-full blur-[100px] opacity-40 pointer-events-none z-[-1]"></div>
+      {!isFullWidth && (
+        <>
+          <div className="fixed -top-40 -left-40 w-96 h-96 bg-ibg-100 rounded-full blur-[100px] opacity-30 pointer-events-none z-[-1]"></div>
+          <div className="fixed -bottom-40 -right-40 w-96 h-96 bg-emerald-100 rounded-full blur-[100px] opacity-30 pointer-events-none z-[-1]"></div>
+        </>
+      )}
     </div>
   );
 };

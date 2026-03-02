@@ -57,7 +57,7 @@ export async function createProduct(
   const { data, error } = await supabase
     .from('products')
     .insert({ ...payload, is_active: true })
-    .select('*, categories(name, sort_order), vendors(name, code)')
+    .select('*, categories(name, sort_order, order_type), vendors(name, code)')
     .single();
   if (error) throw new Error(error.message);
   return data as Product;
