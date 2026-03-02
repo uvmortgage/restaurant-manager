@@ -193,3 +193,49 @@ export async function deleteOrder(orderId: number): Promise<void> {
     .eq('id', orderId);
   if (error) throw new Error(error.message);
 }
+
+// ── Order History ─────────────────────────────────────────────────────────────
+
+export interface ProductHistory {
+  date: string;   // ISO due_date of most recent submitted order
+  qty: number;
+  unit?: string;
+}
+
+/**
+ * Returns product_id → most-recent order info for the given order type.
+ * Only counts SUBMITTED / APPROVED / SENT orders so drafts are excluded.
+ */
+export async function fetchLastOrderedByType(
+  orderType: string
+): Promise<Record<number, ProductHistory>> {
+  const { data: orders, error: ordErr } = await supabase
+    .from('orders')
+    .select('id, due_date')
+    .eq('order_type', orderType)
+    .in('status', ['SUBMITTED', 'APPROVED', 'SENT'])
+    .order('due_date', { ascending: false })
+    .limit(100);
+
+  if (ordErr) throw new Error(ordErr.message);
+  if (!orders?.length) return {};
+
+  const { data: lines, error: lineErr } = await supabase
+    .from('order_lines')
+    .select('product_id, qty_ordered, unit, order_id')
+    .in('order_id', orders.map((o) => o.id));
+
+  if (lineErr) throw new Error(lineErr.message);
+
+  const dateMap = new Map(orders.map((o) => [o.id, o.due_date]));
+  const result: Record<number, ProductHistory> = {};
+
+  for (const line of lines ?? []) {
+    const date = dateMap.get(line.order_id);
+    if (!date) continue;
+    if (!result[line.product_id] || date > result[line.product_id].date) {
+      result[line.product_id] = { date, qty: line.qty_ordered, unit: line.unit ?? undefined };
+    }
+  }
+  return result;
+}

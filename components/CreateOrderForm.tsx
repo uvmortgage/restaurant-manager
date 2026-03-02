@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { Product, Order, OrderLine, Vendor, OrderType, ORDER_TYPE_LABELS } from '../inventory-types';
-import { fetchProducts, fetchVendors, createOrder, createOrderLines, updateProductVendor } from '../services/inventoryService';
+import {
+  fetchProducts,
+  fetchVendors,
+  createOrder,
+  createOrderLines,
+  updateProductVendor,
+  fetchLastOrderedByType,
+  ProductHistory,
+} from '../services/inventoryService';
 
 interface SelectionState {
   selected: boolean;
@@ -10,7 +18,6 @@ interface SelectionState {
   unitOverride: string;
 }
 
-// Vendor override per product: vendorId to use, and whether to save it permanently
 interface VendorOverride {
   vendorId: number;
   permanent: boolean;
@@ -21,38 +28,47 @@ interface Props {
   orderType: OrderType;
   onSubmit: (order: Order) => void;
   onCancel: () => void;
-  // "Add items to existing order" mode
   existingOrder?: Order;
   excludeProductIds?: Set<number>;
   onItemsAdded?: () => void;
 }
 
 function fmtOrderDate(iso: string) {
-  const d = new Date(iso + 'T00:00:00');
+  const d = new Date(iso + (iso.includes('T') ? '' : 'T00:00:00'));
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function isoDatePlusDays(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().split('T')[0];
 }
 
 const PRESET_QTYS = [1, 2, 3, 4, 5, 6, 10, 12, 24, 48];
 
-const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel, existingOrder, excludeProductIds, onItemsAdded }) => {
+const CreateOrderForm: React.FC<Props> = ({
+  user, orderType, onSubmit, onCancel, existingOrder, excludeProductIds, onItemsAdded,
+}) => {
   const isAddMode = !!existingOrder;
-  const [dueDate, setDueDate] = useState(existingOrder?.due_date ?? '');
-  const [notes, setNotes] = useState(existingOrder?.notes ?? '');
-  const [products, setProducts] = useState<Product[]>([]);
+
+  const [dueDate, setDueDate]       = useState(existingOrder?.due_date ?? isoDatePlusDays(2));
+  const [notes, setNotes]           = useState(existingOrder?.notes ?? '');
+  const [products, setProducts]     = useState<Product[]>([]);
   const [selections, setSelections] = useState<Map<number, SelectionState>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [vendorFilter, setVendorFilter] = useState('');
+  const [loading, setLoading]       = useState(true);
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [vendorFilter, setVendorFilter]     = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [searchFilter, setSearchFilter] = useState('');
+  const [searchFilter, setSearchFilter]     = useState('');
   const [allVendors, setAllVendors] = useState<Vendor[]>([]);
-  // productId → { vendorId, permanent }
   const [vendorOverrides, setVendorOverrides] = useState<Map<number, VendorOverride>>(new Map());
+  const [orderHistory, setOrderHistory] = useState<Record<number, ProductHistory>>({});
 
   useEffect(() => {
     loadProducts();
     fetchVendors().then(setAllVendors).catch(() => {});
+    fetchLastOrderedByType(orderType).then(setOrderHistory).catch(() => {});
   }, []);
 
   const loadProducts = async () => {
@@ -92,17 +108,14 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
 
   const selectedCount = Array.from(selections.values()).filter((s) => s.selected).length;
 
-  // Unique vendors and categories for filter dropdowns — scoped to this order type
   const orderTypeProducts = products.filter((p) => {
     const catOrderType = p.categories?.order_type;
     return !catOrderType || catOrderType === orderType;
   });
-  const vendors = [...new Map(orderTypeProducts.filter((p) => p.vendors?.name).map((p) => [p.vendors!.name, p.vendors!.name])).values()].sort();
+  const vendors    = [...new Map(orderTypeProducts.filter((p) => p.vendors?.name).map((p) => [p.vendors!.name, p.vendors!.name])).values()].sort();
   const categories = [...new Map(orderTypeProducts.filter((p) => p.categories?.name).map((p) => [p.categories!.name, p.categories!.name])).values()].sort();
 
-  // Apply filters then group by category
   const filteredProducts = products.filter((p) => {
-    // Only show products whose category belongs to this order type (or has no order_type set)
     const catOrderType = p.categories?.order_type;
     if (catOrderType && catOrderType !== orderType) return false;
     if (vendorFilter && p.vendors?.name !== vendorFilter) return false;
@@ -127,7 +140,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
 
   const handleSubmit = async () => {
     if (!isAddMode && !dueDate) { setError('Please select a due date.'); return; }
-    if (selectedCount === 0) { setError('Select at least one product.'); return; }
+    if (selectedCount === 0)    { setError('Select at least one product.'); return; }
 
     for (const [pid, sel] of selections.entries()) {
       if (!sel.selected) continue;
@@ -144,52 +157,48 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
 
     try {
       if (isAddMode) {
-        // Adding items to an existing order
         const lines: Omit<OrderLine, 'id' | 'created_at'>[] = [];
         for (const [pid, sel] of selections.entries()) {
           if (!sel.selected) continue;
           const qty = sel.qtyOverride ? parseFloat(sel.qtyOverride) : sel.qtyDropdown;
           const product = products.find((p) => p.id === pid);
           lines.push({
-            order_id: existingOrder!.id,
-            product_id: pid,
+            order_id:    existingOrder!.id,
+            product_id:  pid,
             qty_ordered: qty,
-            unit: sel.unitOverride || product?.unit || undefined,
-            notes: undefined,
+            unit:        sel.unitOverride || product?.unit || undefined,
+            notes:       undefined,
           });
         }
         await createOrderLines(lines);
         onItemsAdded?.();
       } else {
-        // Save permanent vendor changes first
         const permanentChanges = [...vendorOverrides.entries()].filter(([, ov]) => ov.permanent);
         await Promise.all(permanentChanges.map(([pid, ov]) => updateProductVendor(pid, ov.vendorId)));
 
         const orderPayload: Omit<Order, 'id' | 'created_at' | 'updated_at'> = {
-          due_date: dueDate,
+          due_date:     dueDate,
           submitted_by: user.name,
           submitted_at: new Date().toISOString(),
-          status: 'DRAFT',
-          order_type: orderType,
-          notes: notes.trim() || undefined,
+          status:       'DRAFT',
+          order_type:   orderType,
+          notes:        notes.trim() || undefined,
         };
 
         const newOrder = await createOrder(orderPayload);
-
         const lines: Omit<OrderLine, 'id' | 'created_at'>[] = [];
         for (const [pid, sel] of selections.entries()) {
           if (!sel.selected) continue;
           const qty = sel.qtyOverride ? parseFloat(sel.qtyOverride) : sel.qtyDropdown;
           const product = products.find((p) => p.id === pid);
           lines.push({
-            order_id: newOrder.id,
-            product_id: pid,
+            order_id:    newOrder.id,
+            product_id:  pid,
             qty_ordered: qty,
-            unit: sel.unitOverride || product?.unit || undefined,
-            notes: undefined,
+            unit:        sel.unitOverride || product?.unit || undefined,
+            notes:       undefined,
           });
         }
-
         await createOrderLines(lines);
         onSubmit(newOrder);
       }
@@ -205,32 +214,38 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 animate-fadeIn">
       {/* Header */}
-      <header className="flex items-center gap-4 p-4 bg-white border-b border-slate-100 sticky top-0 z-10">
+      <header className="flex items-center gap-3 px-4 py-3 bg-ibg-600 sticky top-0 z-10 shadow-md">
         <button
           onClick={onCancel}
           disabled={saving}
-          className="p-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors"
+          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
-        <div className="flex-1">
-          <h1 className="text-lg font-black text-slate-900 tracking-tight">
-            {isAddMode ? 'Add Items' : `New ${ORDER_TYPE_LABELS[orderType]} Order`}
-          </h1>
-          <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">
-            {selectedCount > 0 ? `${selectedCount} product${selectedCount > 1 ? 's' : ''} selected` : 'Select products below'}
+        <div className="flex-1 min-w-0">
+          <p className="text-white/60 text-[9px] font-bold uppercase tracking-widest leading-none">
+            {isAddMode ? `Due ${fmtOrderDate(existingOrder!.due_date)}` : ORDER_TYPE_LABELS[orderType]}
           </p>
+          <h1 className="text-white font-black text-base leading-tight truncate">
+            {isAddMode ? 'Add Items to Order' : `New ${ORDER_TYPE_LABELS[orderType]} Order`}
+          </h1>
         </div>
+        {selectedCount > 0 && (
+          <div className="shrink-0 bg-white/15 rounded-xl px-3 py-1.5 text-center">
+            <p className="text-white font-black text-lg leading-none">{selectedCount}</p>
+            <p className="text-white/70 text-[9px] font-bold uppercase tracking-wider">selected</p>
+          </div>
+        )}
       </header>
 
       <div className="flex-1 p-4 space-y-4 pb-32">
-        {/* Order context banner (add-items mode) or Due Date + Notes form (new order mode) */}
+        {/* Context banner (add mode) or Due Date + Notes form */}
         {isAddMode ? (
-          <div className="bg-teal-50 border border-teal-100 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0d9488" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <div className="bg-ibg-50 border border-ibg-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#952D34" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             <div>
-              <p className="text-teal-800 font-black text-xs uppercase tracking-widest">Due {fmtOrderDate(existingOrder!.due_date)}</p>
-              {existingOrder!.notes && <p className="text-teal-600 text-xs font-medium mt-0.5">{existingOrder!.notes}</p>}
+              <p className="text-ibg-800 font-black text-xs uppercase tracking-widest">Due {fmtOrderDate(existingOrder!.due_date)}</p>
+              {existingOrder!.notes && <p className="text-ibg-600 text-xs font-medium mt-0.5">{existingOrder!.notes}</p>}
             </div>
           </div>
         ) : (
@@ -244,8 +259,9 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 min={new Date().toISOString().split('T')[0]}
-                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent"
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
               />
+              <p className="text-[10px] text-slate-400 font-medium mt-1">Default: 2 days from today. Tap to change.</p>
             </div>
             <div>
               <label className="text-xs font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
@@ -255,14 +271,14 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder="Any special instructions for this order..."
-                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-slate-800 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent resize-none"
+                placeholder="Any special instructions..."
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-slate-800 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-ibg-400 resize-none"
               />
             </div>
           </div>
         )}
 
-        {/* Search + Vendor + Category Filters */}
+        {/* Filters */}
         {!loading && products.length > 0 && (
           <div className="space-y-2">
             <input
@@ -270,7 +286,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
               placeholder="Search products..."
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-slate-700 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-slate-700 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
               autoFocus={isAddMode}
             />
             <div className="flex gap-2">
@@ -279,20 +295,20 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
                 <select
                   value={vendorFilter}
                   onChange={(e) => setVendorFilter(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
                 >
                   <option value="">All Vendors</option>
                   {vendors.map((v) => <option key={v} value={v}>{v}</option>)}
                 </select>
               </div>
               <div className="flex-1">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Type</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Category</label>
                 <select
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
                 >
-                  <option value="">All Types</option>
+                  <option value="">All Categories</option>
                   {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
@@ -311,8 +327,8 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4">
             <div className="relative">
-              <div className="w-10 h-10 border-4 border-teal-100 rounded-full"></div>
-              <div className="absolute top-0 left-0 w-10 h-10 border-4 border-t-teal-600 rounded-full animate-spin"></div>
+              <div className="w-10 h-10 border-4 border-ibg-100 rounded-full"></div>
+              <div className="absolute top-0 left-0 w-10 h-10 border-4 border-t-ibg-600 rounded-full animate-spin"></div>
             </div>
             <p className="text-slate-400 text-sm">Loading products...</p>
           </div>
@@ -323,66 +339,102 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
         ) : grouped.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-100 p-8 text-center">
             <p className="text-slate-500 font-semibold text-sm">
-              {searchFilter ? `No products match "${searchFilter}".` : isAddMode ? 'All products are already in this order.' : 'No products match the selected filters.'}
+              {searchFilter
+                ? `No products match "${searchFilter}".`
+                : isAddMode
+                  ? 'All products are already in this order.'
+                  : 'No products match the selected filters.'}
             </p>
           </div>
         ) : (
           grouped.map(([category, catProducts]) => (
             <div key={category} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-              {/* Category Header */}
               <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-teal-100 text-teal-700">
+                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-ibg-100 text-ibg-700">
                   {category}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">{catProducts.length} items</span>
               </div>
-
-              {/* Product Rows */}
               <div className="divide-y divide-slate-50">
                 {catProducts.map((product) => {
                   const sel = selections.get(product.id) ?? {
                     selected: false, qtyDropdown: 1, qtyOverride: '', unitOverride: '',
                   };
                   const vendorOv = vendorOverrides.get(product.id);
-                  const effectiveVendorId = vendorOv?.vendorId ?? product.vendor_id;
+                  const effectiveVendorId   = vendorOv?.vendorId ?? product.vendor_id;
                   const effectiveVendorName = vendorOv
                     ? allVendors.find((v) => v.id === vendorOv.vendorId)?.name
                     : product.vendors?.name;
+                  const history = orderHistory[product.id];
 
                   return (
                     <div
                       key={product.id}
-                      className={`p-4 transition-colors ${sel.selected ? 'bg-teal-50/40' : ''}`}
+                      className={`p-4 transition-colors ${sel.selected ? 'bg-ibg-50/30' : ''}`}
                     >
-                      {/* Row 1: Checkbox + Name + Vendor badge */}
-                      <div className="flex items-start gap-3 mb-3">
+                      {/* Row: Checkbox + Name + badges */}
+                      <div className="flex items-start gap-3">
                         <div className="pt-0.5">
                           <input
                             type="checkbox"
                             id={`prod-${product.id}`}
                             checked={sel.selected}
-                            onChange={(e) => updateSelection(product.id, { selected: e.target.checked })}
-                            className="w-5 h-5 rounded border-slate-300 accent-teal-600 cursor-pointer"
+                            onChange={(e) => {
+                              const nowSelected = e.target.checked;
+                              if (nowSelected && history) {
+                                // Pre-fill qty from history
+                                const presetQty = PRESET_QTYS.includes(history.qty) ? history.qty : 1;
+                                updateSelection(product.id, {
+                                  selected:      true,
+                                  qtyDropdown:   presetQty,
+                                  qtyOverride:   PRESET_QTYS.includes(history.qty) ? '' : String(history.qty),
+                                  unitOverride:  history.unit && history.unit !== product.unit ? history.unit : '',
+                                });
+                              } else {
+                                updateSelection(product.id, { selected: nowSelected });
+                              }
+                            }}
+                            className="w-5 h-5 rounded border-slate-300 accent-ibg-600 cursor-pointer"
                           />
                         </div>
-                        <label htmlFor={`prod-${product.id}`} className="flex-1 cursor-pointer">
+                        <label htmlFor={`prod-${product.id}`} className="flex-1 cursor-pointer min-w-0">
                           <p className={`font-bold text-sm leading-tight ${sel.selected ? 'text-slate-900' : 'text-slate-700'}`}>
                             {product.name}
                           </p>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                             <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 ${vendorOv ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
                               {effectiveVendorName ?? '—'}
                               {vendorOv && !vendorOv.permanent && ' · order only'}
                               {vendorOv && vendorOv.permanent && ' · permanent'}
                             </span>
                             <span className="text-[10px] text-slate-400 font-medium">{product.unit}</span>
+                            {history && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 bg-indigo-50 rounded px-1.5 py-0.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                {history.qty}{history.unit ? ` ${history.unit}` : ''} · {fmtOrderDate(history.date)}
+                              </span>
+                            )}
                           </div>
                         </label>
                       </div>
 
-                      {/* Expanded controls — only when selected */}
+                      {/* Expanded controls */}
                       {sel.selected && (
-                        <div className="ml-8 space-y-3">
+                        <div className="ml-8 mt-3 space-y-3">
+                          {/* History hint */}
+                          {history && (
+                            <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                              <p className="text-[11px] text-indigo-700 font-semibold">
+                                Last ordered{' '}
+                                <span className="font-black">{history.qty}{history.unit ? ` ${history.unit}` : ''}</span>
+                                {' '}on{' '}
+                                <span className="font-black">{fmtOrderDate(history.date)}</span>
+                                {' '}· qty pre-filled
+                              </p>
+                            </div>
+                          )}
+
                           {/* Qty controls */}
                           <div className="grid grid-cols-3 gap-2">
                             <div>
@@ -390,7 +442,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
                               <select
                                 value={sel.qtyDropdown}
                                 onChange={(e) => updateSelection(product.id, { qtyDropdown: Number(e.target.value) })}
-                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
                               >
                                 {PRESET_QTYS.map((q) => <option key={q} value={q}>{q}</option>)}
                               </select>
@@ -404,7 +456,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
                                 value={sel.qtyOverride}
                                 onChange={(e) => updateSelection(product.id, { qtyOverride: e.target.value })}
                                 placeholder="Custom"
-                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder:text-slate-300"
+                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 placeholder:text-slate-300"
                               />
                             </div>
                             <div>
@@ -418,12 +470,12 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
                                   })
                                 }
                                 placeholder={product.unit}
-                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder:text-slate-300"
+                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 placeholder:text-slate-300"
                               />
                             </div>
                           </div>
 
-                          {/* Supplier change — only available when creating a new order */}
+                          {/* Supplier change — new orders only */}
                           {!isAddMode && allVendors.length > 0 && (
                             <div className="border border-slate-200 rounded-xl p-3 bg-white space-y-2">
                               <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">
@@ -433,20 +485,15 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
                                 value={effectiveVendorId}
                                 onChange={(e) => {
                                   const newId = Number(e.target.value);
-                                  if (newId === product.vendor_id) {
-                                    clearVendorOverride(product.id);
-                                  } else {
-                                    setVendorOverride(product.id, newId, vendorOv?.permanent ?? false);
-                                  }
+                                  if (newId === product.vendor_id) clearVendorOverride(product.id);
+                                  else setVendorOverride(product.id, newId, vendorOv?.permanent ?? false);
                                 }}
-                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
                               >
                                 {allVendors.map((v) => (
                                   <option key={v.id} value={v.id}>{v.name}</option>
                                 ))}
                               </select>
-
-                              {/* Only show save options if vendor was actually changed */}
                               {vendorOv && (
                                 <div className="flex gap-2">
                                   <button
@@ -465,7 +512,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
                                     onClick={() => setVendorOverride(product.id, vendorOv.vendorId, true)}
                                     className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-colors ${
                                       vendorOv.permanent
-                                        ? 'bg-teal-600 text-white border-teal-600'
+                                        ? 'bg-ibg-600 text-white border-ibg-600'
                                         : 'bg-white text-slate-500 border-slate-200'
                                     }`}
                                   >
@@ -494,7 +541,7 @@ const CreateOrderForm: React.FC<Props> = ({ user, orderType, onSubmit, onCancel,
           className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${
             saving || selectedCount === 0 || (!isAddMode && !dueDate)
               ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              : 'bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] shadow-md shadow-teal-200'
+              : 'bg-ibg-600 text-white hover:bg-ibg-700 active:scale-[0.98] shadow-md shadow-ibg-200'
           }`}
         >
           {saving ? (

@@ -462,6 +462,9 @@ const App: React.FC = () => {
               setSelectedOrder(null);
               setCurrentScreen('INVENTORY_MANAGER');
             }}
+            onDuplicated={(newOrder) => {
+              setSelectedOrder(newOrder);
+            }}
           />
         ) : null;
 
