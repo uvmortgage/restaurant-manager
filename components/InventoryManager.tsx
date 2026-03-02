@@ -68,10 +68,10 @@ const EMPTY_FORM: ProductFormState = { name: '', category_id: '', vendor_id: '',
 const BrandHeader: React.FC<{ onBack: () => void; title: string; subtitle?: string; action?: React.ReactNode }> = ({
   onBack, title, subtitle, action,
 }) => (
-  <header className="flex items-center gap-3 px-4 py-3 bg-ibg-600 sticky top-0 z-20 shadow-md shadow-ibg-900/20">
+  <header className="flex items-center gap-3 px-4 py-3 bg-ibg-600 sticky top-0 z-20 shadow-md">
     <button
       onClick={onBack}
-      className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors shrink-0"
+      className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors shrink-0 border border-white/20"
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
     </button>
@@ -86,8 +86,8 @@ const BrandHeader: React.FC<{ onBack: () => void; title: string; subtitle?: stri
         <path d="M14 21 Q5 16 7 27 Q12 23 14 21Z" fill="white" fillOpacity="0.65"/>
       </svg>
       <div className="min-w-0">
-        <p className="text-white/60 text-[9px] font-bold uppercase tracking-widest leading-none">Inchin's Bamboo Garden</p>
-        <h1 className="text-white font-black text-base leading-tight truncate">{title}</h1>
+        <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest leading-none">Inchin's Bamboo Garden</p>
+        <h1 className="text-white font-black text-lg leading-tight truncate">{title}</h1>
       </div>
     </div>
     {subtitle && <span className="text-white/60 text-[10px] font-bold uppercase tracking-wider shrink-0">{subtitle}</span>}
@@ -506,19 +506,19 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                 if (typeFilter !== 'ALL') { onCreateOrder(typeFilter as OrderType); }
                 else { setShowTypePickerFor(true); }
               }}
-              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors"
+              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border border-white/20"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              New
+              New Order
             </button>
           ) : (
             <div className="flex items-center gap-2">
               <button
                 onClick={toggleBulkEditMode}
-                className={`hidden lg:flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors ${
+                className={`hidden lg:flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border ${
                   bulkEditMode
-                    ? 'bg-amber-400 text-amber-900 hover:bg-amber-300'
-                    : 'bg-white/15 hover:bg-white/25 text-white'
+                    ? 'bg-amber-400 text-amber-900 hover:bg-amber-300 border-amber-300'
+                    : 'bg-white/20 hover:bg-white/30 text-white border-white/20'
                 }`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -526,10 +526,10 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
               </button>
               <button
                 onClick={() => { setShowAddForm((v) => !v); setAddError(null); }}
-                className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors"
+                className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border border-white/20"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add
+                Add Product
               </button>
             </div>
           )
