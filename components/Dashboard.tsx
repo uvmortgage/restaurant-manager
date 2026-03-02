@@ -27,29 +27,44 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="flex flex-col h-full w-full max-w-xl mx-auto p-4 sm:p-6 animate-fadeIn">
-      <header className="flex justify-between items-center mb-8">
+      {/* IBG Brand Header */}
+      <div className="bg-ibg-600 rounded-3xl p-4 mb-6 flex items-center justify-between shadow-lg shadow-ibg-200">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold shadow-lg">
-            {user.name.charAt(0)}
+          <div className="w-11 h-11 bg-white/15 rounded-2xl flex items-center justify-center">
+            <svg width="28" height="28" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="14" y="2" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.95"/>
+              <rect x="14" y="15" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.8"/>
+              <rect x="14" y="28" width="5" height="10" rx="2.5" fill="white" fillOpacity="0.95"/>
+              <rect x="11" y="12" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.6"/>
+              <rect x="11" y="25" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.6"/>
+              <path d="M19 7.5 Q28 3 26 13 Q21 9 19 7.5Z" fill="white" fillOpacity="0.7"/>
+              <path d="M14 21 Q5 16 7 27 Q12 23 14 21Z" fill="white" fillOpacity="0.7"/>
+            </svg>
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-900">{user.name}</h1>
-            <div className="flex items-center gap-1.5">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{user.role}</p>
-              {isOwner && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>}
-            </div>
+            <p className="text-white font-black text-sm tracking-tight leading-none">Inchin's Bamboo Garden</p>
+            <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-0.5">South Charlotte</p>
           </div>
         </div>
+        <div className="text-right">
+          <p className="text-white/70 text-[9px] font-bold uppercase tracking-widest">Signed in as</p>
+          <p className="text-white font-black text-xs">{user.name}</p>
+          <p className="text-white/60 text-[9px] font-medium uppercase tracking-wider">{user.role}</p>
+        </div>
+      </div>
+
+      <header className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-black text-slate-800 tracking-tight">Management Hub</h2>
         <button
           onClick={onLogout}
           className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"
+          title="Sign out"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
       </header>
 
-      <div className="space-y-6">
-        <h2 className="text-2xl font-black text-slate-800 tracking-tight">Management Hub</h2>
+      <div className="space-y-4">
 
         {/* Inventory Manager Card */}
         <button
@@ -142,9 +157,10 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       </div>
 
-      <footer className="mt-auto pt-10 text-center">
-        <p className="text-slate-400 text-[10px] font-medium uppercase tracking-widest flex items-center justify-center gap-2">
-          RestoHub v9.0
+      <footer className="mt-auto pt-10 text-center space-y-1">
+        <p className="text-ibg-600 text-[10px] font-black uppercase tracking-widest">Inchin's Bamboo Garden · South Charlotte</p>
+        <p className="text-slate-400 text-[9px] font-medium uppercase tracking-widest flex items-center justify-center gap-2">
+          RestoHub v9.1
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
         </p>
       </footer>

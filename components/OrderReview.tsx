@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { Order, OrderLineDetail } from '../inventory-types';
+import { Order, OrderLineDetail, OrderType } from '../inventory-types';
 import {
   fetchOrderLinesWithProducts,
   submitOrder,
   deleteOrderLine,
   updateOrderLine,
   deleteOrder,
+  createOrder,
+  createOrderLines,
 } from '../services/inventoryService';
 import CreateOrderForm from './CreateOrderForm';
 
@@ -16,6 +18,7 @@ interface Props {
   onBack: () => void;
   onSubmitted: () => void;
   onDeleted: () => void;
+  onDuplicated: (newOrder: Order) => void;
 }
 
 // ── Canvas helpers ────────────────────────────────────────────────────────────
@@ -156,7 +159,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDeleted }) => {
+const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDeleted, onDuplicated }) => {
   const [lines, setLines]             = useState<OrderLineDetail[]>([]);
   const [loading, setLoading]         = useState(true);
   const [submitting, setSubmitting]   = useState(false);
@@ -165,6 +168,8 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
   const [error, setError]             = useState<string | null>(null);
   const [deleting, setDeleting]       = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
+  const [showDuplicateConfirm, setShowDuplicateConfirm] = useState(false);
 
   // Per-line local edits { qty, unit } — applied on submit
   const [lineEdits, setLineEdits] = useState<Map<number, { qty: string; unit: string }>>(new Map());
@@ -299,6 +304,42 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
     }
   };
 
+  // ── Duplicate order ───────────────────────────────────────────────────────
+
+  const handleDuplicate = async () => {
+    setDuplicating(true);
+    setError(null);
+    setShowDuplicateConfirm(false);
+    try {
+      // New draft with same type, due in 2 days
+      const dueDt = new Date();
+      dueDt.setDate(dueDt.getDate() + 2);
+      const newOrder = await createOrder({
+        due_date:     dueDt.toISOString().split('T')[0],
+        submitted_by: user.name,
+        submitted_at: new Date().toISOString(),
+        status:       'DRAFT',
+        order_type:   (order.order_type ?? 'WEEKLY_FOOD') as OrderType,
+        notes:        order.notes,
+      });
+      if (lines.length > 0) {
+        await createOrderLines(
+          lines.map((l) => ({
+            order_id:    newOrder.id,
+            product_id:  l.product_id,
+            qty_ordered: l.qty_ordered,
+            unit:        l.unit,
+            notes:       l.notes,
+          }))
+        );
+      }
+      onDuplicated(newOrder);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to duplicate order');
+      setDuplicating(false);
+    }
+  };
+
   // ── Computed ──────────────────────────────────────────────────────────────
 
   const vendorGroups      = makeVendorGroups(lines);
@@ -310,6 +351,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
     return (
       <CreateOrderForm
         user={user}
+        orderType={(order.order_type ?? 'WEEKLY_FOOD') as OrderType}
         existingOrder={order}
         excludeProductIds={orderedProductIds}
         onCancel={() => setShowAddItems(false)}
@@ -323,18 +365,42 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
     <div className="flex flex-col min-h-screen bg-slate-50 animate-fadeIn">
 
       {/* Header */}
-      <header className="flex items-center gap-4 p-4 bg-white border-b border-slate-100 sticky top-0 z-10">
+      <header className="flex items-center gap-3 px-4 py-3 bg-ibg-600 sticky top-0 z-10 shadow-md">
         <button onClick={onBack} disabled={submitting}
-          className="p-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
-        <div className="flex-1">
-          <h1 className="text-lg font-black text-slate-900 tracking-tight">Review Order</h1>
-          <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Due {fmtDate(order.due_date)}</p>
+        <div className="flex-1 min-w-0">
+          <p className="text-white/60 text-[9px] font-bold uppercase tracking-widest leading-none">Review Order</p>
+          <h1 className="text-white font-black text-base leading-tight">Due {fmtDate(order.due_date)}</h1>
         </div>
-        <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${STATUS_COLORS[currentStatus] ?? 'bg-slate-100 text-slate-600'}`}>
+        <span className={`shrink-0 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${STATUS_COLORS[currentStatus] ?? 'bg-slate-100 text-slate-600'}`}>
           {currentStatus}
         </span>
+        {/* Duplicate button */}
+        {!showDuplicateConfirm ? (
+          <button
+            onClick={() => setShowDuplicateConfirm(true)}
+            disabled={duplicating || submitting}
+            title="Duplicate this order as a new draft"
+            className="shrink-0 flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white text-[11px] font-black uppercase tracking-wider px-2.5 py-2 rounded-xl transition-colors disabled:opacity-40"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            {duplicating ? '...' : 'Dup'}
+          </button>
+        ) : (
+          <div className="shrink-0 flex items-center gap-1.5 bg-white/20 rounded-xl px-2 py-1">
+            <span className="text-white/80 text-[10px] font-semibold">Copy order?</span>
+            <button
+              onClick={handleDuplicate}
+              className="text-[10px] font-black text-white bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg transition-colors"
+            >Yes</button>
+            <button
+              onClick={() => setShowDuplicateConfirm(false)}
+              className="text-[10px] font-bold text-white/60 hover:text-white px-1.5 py-1 rounded-lg transition-colors"
+            >No</button>
+          </div>
+        )}
       </header>
 
       <div className="flex-1 p-4 space-y-4 pb-28">
