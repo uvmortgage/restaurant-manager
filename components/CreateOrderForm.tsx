@@ -75,7 +75,8 @@ const CreateOrderForm: React.FC<Props> = ({
   const [newProdQty, setNewProdQty] = useState('');
   const [newProdUnit, setNewProdUnit] = useState('');
   const [newProdCategoryId, setNewProdCategoryId] = useState<number | ''>('');
-  const [newProdItems, setNewProdItems] = useState<{ name: string, qty: number, unit: string, category_id: number }[]>([]);
+  const [newProdVendorId, setNewProdVendorId] = useState<number | ''>('');
+  const [newProdItems, setNewProdItems] = useState<{ name: string, qty: number, unit: string, category_id: number, vendor_id: number }[]>([]);
 
   useEffect(() => {
     loadProducts();
@@ -191,7 +192,7 @@ const CreateOrderForm: React.FC<Props> = ({
             name: ni.name,
             category_id: ni.category_id,
             unit: ni.unit,
-            vendor_id: allVendors[0]?.id || 1, // Default to first vendor or ID 1
+            vendor_id: ni.vendor_id,
           });
           lines.push({
             order_id: existingOrder!.id,
@@ -237,7 +238,7 @@ const CreateOrderForm: React.FC<Props> = ({
             name: ni.name,
             category_id: ni.category_id,
             unit: ni.unit,
-            vendor_id: allVendors[0]?.id || 1,
+            vendor_id: ni.vendor_id,
           });
           lines.push({
             order_id: newOrder.id,
@@ -335,7 +336,7 @@ const CreateOrderForm: React.FC<Props> = ({
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-sm text-slate-800 truncate">{item.name}</p>
                   <p className="text-[10px] text-slate-400 font-medium">
-                    {allCategories.find(c => c.id === item.category_id)?.name} · {item.qty} {item.unit}
+                    {allCategories.find(c => c.id === item.category_id)?.name} · {allVendors.find(v => v.id === item.vendor_id)?.name} · {item.qty} {item.unit}
                   </p>
                 </div>
                 <button
@@ -401,21 +402,32 @@ const CreateOrderForm: React.FC<Props> = ({
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
+              <select
+                value={newProdVendorId}
+                onChange={e => setNewProdVendorId(e.target.value ? Number(e.target.value) : '')}
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
+              >
+                <option value="">Select Vendor</option>
+                {allVendors.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
             </div>
 
             <button
               onClick={() => {
-                if (!newProdName || !newProdQty || !newProdUnit || !newProdCategoryId) return;
+                if (!newProdName || !newProdQty || !newProdUnit || !newProdCategoryId || !newProdVendorId) return;
                 setNewProdItems(prev => [...prev, {
                   name: newProdName,
                   qty: parseFloat(newProdQty),
                   unit: newProdUnit,
-                  category_id: newProdCategoryId as number
+                  category_id: newProdCategoryId as number,
+                  vendor_id: newProdVendorId as number
                 }]);
-                setNewProdName(''); setNewProdQty(''); setNewProdUnit(''); setNewProdCategoryId('');
+                setNewProdName(''); setNewProdQty(''); setNewProdUnit(''); setNewProdCategoryId(''); setNewProdVendorId('');
                 setShowAddProduct(false);
               }}
-              disabled={!newProdName || !newProdQty || !newProdUnit || !newProdCategoryId}
+              disabled={!newProdName || !newProdQty || !newProdUnit || !newProdCategoryId || !newProdVendorId}
               className="w-full py-2.5 rounded-xl bg-ibg-600 text-white font-black text-xs uppercase tracking-widest disabled:opacity-50 disabled:bg-slate-300 transition-all font-bold"
             >
               Add to List
@@ -714,7 +726,7 @@ const CreateOrderForm: React.FC<Props> = ({
           )}
         </button>
       </div>
-    </div>
+    </div >
   );
 };
 
