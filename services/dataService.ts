@@ -1,6 +1,6 @@
 
 import { supabase } from './supabaseClient';
-import { User, Transaction, Receipt, CateringEvent } from '../types';
+import { User, Transaction, Receipt, CateringEvent, Restaurant, AccessRequest } from '../types';
 
 const OWNER_EMAILS = new Set(['sri7576@gmail.com', 'Sree.m2608@gmail.com']);
 
@@ -107,6 +107,72 @@ export const dataService = {
       .from('catering_events')
       .update(event)
       .eq('id', event.id);
+    if (error) throw new Error(error.message);
+  },
+
+  // ── Restaurants ───────────────────────────────────────────────────────────────
+
+  getRestaurants: async (): Promise<Restaurant[]> => {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('*')
+      .order('name');
+    if (error) console.error('getRestaurants error:', error);
+    return (data ?? []) as Restaurant[];
+  },
+
+  createRestaurant: async (payload: Omit<Restaurant, 'id' | 'created_at'>): Promise<Restaurant> => {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data as Restaurant;
+  },
+
+  updateRestaurant: async (restaurant: Restaurant): Promise<void> => {
+    const { error } = await supabase
+      .from('restaurants')
+      .update(restaurant)
+      .eq('id', restaurant.id);
+    if (error) throw new Error(error.message);
+  },
+
+  assignUserToRestaurant: async (userId: string, restaurantId: string | null): Promise<void> => {
+    const { error } = await supabase
+      .from('app_users')
+      .update({ restaurant_id: restaurantId })
+      .eq('id', userId);
+    if (error) throw new Error(error.message);
+  },
+
+  // ── Access Requests ───────────────────────────────────────────────────────────
+
+  submitAccessRequest: async (payload: { user_email: string; user_name?: string; restaurant_id: string }): Promise<void> => {
+    const record = {
+      ...payload,
+      status: 'pending',
+      requested_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('access_requests').insert(record);
+    if (error) throw new Error(error.message);
+  },
+
+  getAccessRequests: async (): Promise<AccessRequest[]> => {
+    const { data, error } = await supabase
+      .from('access_requests')
+      .select('*')
+      .order('requested_at', { ascending: false });
+    if (error) console.error('getAccessRequests error:', error);
+    return (data ?? []) as AccessRequest[];
+  },
+
+  updateAccessRequestStatus: async (id: string, status: 'approved' | 'rejected'): Promise<void> => {
+    const { error } = await supabase
+      .from('access_requests')
+      .update({ status })
+      .eq('id', id);
     if (error) throw new Error(error.message);
   },
 };

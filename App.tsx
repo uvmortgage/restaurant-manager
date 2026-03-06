@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
-import { User, Transaction, Receipt, CateringEvent, AppState } from './types';
+import { User, Transaction, Receipt, CateringEvent, AppState, Restaurant } from './types';
 import { Order, OrderType } from './inventory-types';
 import { dataService } from './services/dataService';
 import Dashboard from './components/Dashboard';
@@ -18,8 +18,14 @@ import AddCateringPaymentForm from './components/AddCateringPaymentForm';
 import InventoryManager from './components/InventoryManager';
 import CreateOrderForm from './components/CreateOrderForm';
 import OrderReview from './components/OrderReview';
+import AdminPanel from './components/AdminPanel';
+import RequestAccess from './components/RequestAccess';
 
 const SESSION_KEY = 'restohub_session';
+
+// Super-admins have full platform access and can manage restaurants
+const SUPER_ADMIN_EMAILS = new Set(['sri7576@gmail.com', 'Sree.m2608@gmail.com']);
+export const isSuperAdmin = (email: string) => SUPER_ADMIN_EMAILS.has(email);
 
 // Decode a Google JWT credential without a library
 const decodeGoogleJwt = (token: string): Record<string, string> | null => {
@@ -46,7 +52,9 @@ type Screen =
   | 'ADD_CATERING_PAYMENT'
   | 'INVENTORY_MANAGER'
   | 'CREATE_ORDER'
-  | 'ORDER_REVIEW';
+  | 'ORDER_REVIEW'
+  | 'ADMIN_PANEL'
+  | 'REQUEST_ACCESS';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -55,6 +63,7 @@ const App: React.FC = () => {
     receipts: [],
     cateringEvents: [],
     users: [],
+    restaurants: [],
   });
   const [currentScreen, setCurrentScreen] = useState<Screen>('LOGIN');
   const [selectedEvent, setSelectedEvent] = useState<CateringEvent | null>(null);
@@ -66,14 +75,25 @@ const App: React.FC = () => {
 
   const loadDataAndEnter = async (appUser: User) => {
     try {
-      const [transactions, receipts, cateringEvents, users] = await Promise.all([
+      const [transactions, receipts, cateringEvents, users, restaurants] = await Promise.all([
         dataService.getTransactions(),
         dataService.getReceipts(),
         dataService.getCateringEvents(),
         dataService.getUsers(),
+        dataService.getRestaurants(),
       ]);
-      setState({ currentUser: appUser, transactions, receipts, cateringEvents, users });
-      setCurrentScreen('DASHBOARD');
+      setState({ currentUser: appUser, transactions, receipts, cateringEvents, users, restaurants });
+
+      // Route based on access level
+      if (isSuperAdmin(appUser.email)) {
+        setCurrentScreen('DASHBOARD');
+      } else if (appUser.restaurant_id) {
+        setCurrentScreen('DASHBOARD');
+      } else {
+        // No restaurant assigned — show request access screen
+        setState(prev => ({ ...prev, restaurants }));
+        setCurrentScreen('REQUEST_ACCESS');
+      }
     } catch (e) {
       console.error('Failed to load data:', e);
       setAuthError('Failed to load app data. Please try again.');
@@ -135,7 +155,7 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     localStorage.removeItem(SESSION_KEY);
-    setState({ currentUser: null, transactions: [], receipts: [], cateringEvents: [], users: [] });
+    setState({ currentUser: null, transactions: [], receipts: [], cateringEvents: [], users: [], restaurants: [] });
     setCurrentScreen('LOGIN');
   };
 
@@ -191,7 +211,6 @@ const App: React.FC = () => {
       users: prev.users.map(u => u.id === userData.id ? userData : u),
       currentUser: prev.currentUser?.id === userData.id ? userData : prev.currentUser,
     }));
-    // Keep localStorage in sync if the current user was edited
     if (state.currentUser?.id === userData.id) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(userData));
     }
@@ -209,6 +228,17 @@ const App: React.FC = () => {
     setCurrentScreen('ORDER_REVIEW');
   };
 
+  const handleRestaurantCreated = (r: Restaurant) => {
+    setState(prev => ({ ...prev, restaurants: [...prev.restaurants, r] }));
+  };
+
+  const handleRestaurantUpdated = (r: Restaurant) => {
+    setState(prev => ({
+      ...prev,
+      restaurants: prev.restaurants.map(x => x.id === r.id ? r : x),
+    }));
+  };
+
   if (isInitializing) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
@@ -219,13 +249,13 @@ const App: React.FC = () => {
         <div className="flex flex-col items-center gap-1">
           <div className="flex items-center gap-2 mb-1">
             <svg width="20" height="20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="16" y="2" width="5" height="11" rx="2.5" fill="#952D34"/>
-              <rect x="16" y="15" width="5" height="11" rx="2.5" fill="#7a2328"/>
-              <rect x="16" y="28" width="5" height="10" rx="2.5" fill="#952D34"/>
-              <rect x="13" y="12" width="11" height="3.5" rx="1.75" fill="#b83540"/>
-              <rect x="13" y="25" width="11" height="3.5" rx="1.75" fill="#b83540"/>
-              <path d="M21 7.5 Q30 3 28 13 Q23 9 21 7.5Z" fill="#b83540"/>
-              <path d="M16 21 Q7 16 9 27 Q14 23 16 21Z" fill="#b83540"/>
+              <rect x="16" y="2" width="5" height="11" rx="2.5" fill="#0d9488"/>
+              <rect x="16" y="15" width="5" height="11" rx="2.5" fill="#0f766e"/>
+              <rect x="16" y="28" width="5" height="10" rx="2.5" fill="#0d9488"/>
+              <rect x="13" y="12" width="11" height="3.5" rx="1.75" fill="#14b8a6"/>
+              <rect x="13" y="25" width="11" height="3.5" rx="1.75" fill="#14b8a6"/>
+              <path d="M21 7.5 Q30 3 28 13 Q23 9 21 7.5Z" fill="#14b8a6"/>
+              <path d="M16 21 Q7 16 9 27 Q14 23 16 21Z" fill="#14b8a6"/>
             </svg>
             <span className="text-ibg-600 font-black text-xs uppercase tracking-[0.2em]">Inchin's Bamboo Garden</span>
           </div>
@@ -284,6 +314,26 @@ const App: React.FC = () => {
               Authorized Staff Only
             </p>
           </div>
+        );
+
+      case 'REQUEST_ACCESS':
+        return (
+          <RequestAccess
+            currentUser={state.currentUser!}
+            restaurants={state.restaurants}
+            onLogout={handleLogout}
+          />
+        );
+
+      case 'ADMIN_PANEL':
+        return (
+          <AdminPanel
+            currentUser={state.currentUser!}
+            restaurants={state.restaurants}
+            onRestaurantCreated={handleRestaurantCreated}
+            onRestaurantUpdated={handleRestaurantUpdated}
+            onBack={() => setCurrentScreen('DASHBOARD')}
+          />
         );
 
       case 'DASHBOARD':
@@ -473,7 +523,7 @@ const App: React.FC = () => {
     }
   };
 
-  const isFullWidth = ['INVENTORY_MANAGER', 'CREATE_ORDER', 'ORDER_REVIEW'].includes(currentScreen);
+  const isFullWidth = ['INVENTORY_MANAGER', 'CREATE_ORDER', 'ORDER_REVIEW', 'ADMIN_PANEL', 'REQUEST_ACCESS'].includes(currentScreen);
 
   return (
     <div className={`min-h-screen bg-slate-50 relative flex flex-col overflow-x-hidden ${isFullWidth ? '' : 'max-w-lg mx-auto shadow-2xl'}`}>
@@ -481,7 +531,7 @@ const App: React.FC = () => {
       {!isFullWidth && (
         <>
           <div className="fixed -top-40 -left-40 w-96 h-96 bg-ibg-100 rounded-full blur-[100px] opacity-30 pointer-events-none z-[-1]"></div>
-          <div className="fixed -bottom-40 -right-40 w-96 h-96 bg-emerald-100 rounded-full blur-[100px] opacity-30 pointer-events-none z-[-1]"></div>
+          <div className="fixed -bottom-40 -right-40 w-96 h-96 bg-amber-100 rounded-full blur-[100px] opacity-30 pointer-events-none z-[-1]"></div>
         </>
       )}
     </div>
