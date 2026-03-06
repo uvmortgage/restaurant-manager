@@ -8,3 +8,14 @@ const SUPABASE_ANON_KEY =
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   db: { schema: 'ibgsc' },
 });
+
+// Global state for multi-restaurant scoping
+let activeRestaurantId: string | null = null;
+
+export function setActiveRestaurantId(id: string | null) {
+  activeRestaurantId = id;
+}
+
+export function getActiveRestaurantId() {
+  return activeRestaurantId;
+}

@@ -19,6 +19,7 @@ interface Props {
   onSubmitted: () => void;
   onDeleted: () => void;
   onDuplicated: (newOrder: Order) => void;
+  initialShowAddItems?: boolean;
 }
 
 // ── Canvas helpers ────────────────────────────────────────────────────────────
@@ -151,22 +152,22 @@ async function generateOrderImage(
 // ── Status colors ─────────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
-  DRAFT:     'bg-slate-100 text-slate-600',
+  DRAFT: 'bg-slate-100 text-slate-600',
   SUBMITTED: 'bg-amber-100 text-amber-700',
-  APPROVED:  'bg-emerald-100 text-emerald-700',
-  SENT:      'bg-blue-100 text-blue-700',
+  APPROVED: 'bg-emerald-100 text-emerald-700',
+  SENT: 'bg-blue-100 text-blue-700',
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDeleted, onDuplicated }) => {
-  const [lines, setLines]             = useState<OrderLineDetail[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [submitting, setSubmitting]   = useState(false);
-  const [submitted, setSubmitted]     = useState(false);
-  const [sharing, setSharing]         = useState(false);
-  const [error, setError]             = useState<string | null>(null);
-  const [deleting, setDeleting]       = useState(false);
+const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDeleted, onDuplicated, initialShowAddItems }) => {
+  const [lines, setLines] = useState<OrderLineDetail[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [showDuplicateConfirm, setShowDuplicateConfirm] = useState(false);
@@ -175,11 +176,11 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
   const [lineEdits, setLineEdits] = useState<Map<number, { qty: string; unit: string }>>(new Map());
 
   // Add items — open full CreateOrderForm
-  const [showAddItems, setShowAddItems] = useState(false);
+  const [showAddItems, setShowAddItems] = useState(initialShowAddItems || false);
 
-  const currentStatus  = submitted ? 'SUBMITTED' : (order.status as string);
-  const showSubmit     = order.status === 'DRAFT' && !submitted;
-  const canShare       = submitted || order.status !== 'DRAFT';
+  const currentStatus = submitted ? 'SUBMITTED' : (order.status as string);
+  const showSubmit = order.status === 'DRAFT' && !submitted;
+  const canShare = submitted || order.status !== 'DRAFT';
 
   useEffect(() => { loadLines(); }, []);
 
@@ -201,7 +202,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
 
   // ── Edit helpers ──────────────────────────────────────────────────────────
 
-  const getEditQty  = (l: OrderLineDetail) => lineEdits.get(l.id)?.qty  ?? String(l.qty_ordered);
+  const getEditQty = (l: OrderLineDetail) => lineEdits.get(l.id)?.qty ?? String(l.qty_ordered);
   const getEditUnit = (l: OrderLineDetail) => lineEdits.get(l.id)?.unit ?? (l.unit ?? '');
 
   const patchEdit = (lineId: number, patch: Partial<{ qty: string; unit: string }>) =>
@@ -269,17 +270,17 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
         ? { ...order, status: 'SUBMITTED', submitted_by: user.name }
         : order;
       const groups = makeVendorGroups(lines);
-      const file   = await generateOrderImage(displayOrder, lines, groups);
+      const file = await generateOrderImage(displayOrder, lines, groups);
 
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({
           title: `Inventory Order — Due ${fmtDate(order.due_date)}`,
-          text:  `${lines.length} items · Submitted by ${user.name}`,
+          text: `${lines.length} items · Submitted by ${user.name}`,
           files: [file],
         });
       } else {
         const url = URL.createObjectURL(file);
-        const a   = document.createElement('a');
+        const a = document.createElement('a');
         a.href = url; a.download = file.name; a.click();
         URL.revokeObjectURL(url);
       }
@@ -315,21 +316,21 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
       const dueDt = new Date();
       dueDt.setDate(dueDt.getDate() + 2);
       const newOrder = await createOrder({
-        due_date:     dueDt.toISOString().split('T')[0],
+        due_date: dueDt.toISOString().split('T')[0],
         submitted_by: user.name,
         submitted_at: new Date().toISOString(),
-        status:       'DRAFT',
-        order_type:   (order.order_type ?? 'WEEKLY_FOOD') as OrderType,
-        notes:        order.notes,
+        status: 'DRAFT',
+        order_type: (order.order_type ?? 'WEEKLY_FOOD') as OrderType,
+        notes: order.notes,
       });
       if (lines.length > 0) {
         await createOrderLines(
           lines.map((l) => ({
-            order_id:    newOrder.id,
-            product_id:  l.product_id,
+            order_id: newOrder.id,
+            product_id: l.product_id,
             qty_ordered: l.qty_ordered,
-            unit:        l.unit,
-            notes:       l.notes,
+            unit: l.unit,
+            notes: l.notes,
           }))
         );
       }
@@ -342,7 +343,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
-  const vendorGroups      = makeVendorGroups(lines);
+  const vendorGroups = makeVendorGroups(lines);
   const orderedProductIds = new Set(lines.map(l => l.product_id));
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -356,7 +357,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
         excludeProductIds={orderedProductIds}
         onCancel={() => setShowAddItems(false)}
         onItemsAdded={() => { setShowAddItems(false); loadLines(); }}
-        onSubmit={() => {}}
+        onSubmit={() => { }}
       />
     );
   }
@@ -368,7 +369,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
       <header className="flex items-center gap-3 px-4 py-3 bg-ibg-600 sticky top-0 z-10 shadow-md">
         <button onClick={onBack} disabled={submitting}
           className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors shrink-0 border border-white/20">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
         </button>
         <div className="flex-1 min-w-0">
           <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest leading-none">Order Review</p>
@@ -385,7 +386,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
             title="Duplicate this order as a new draft"
             className="shrink-0 flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors disabled:opacity-40 border border-white/20"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
             {duplicating ? 'Copying...' : 'Duplicate'}
           </button>
         ) : (
@@ -409,7 +410,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
         {submitted && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
             </div>
             <div>
               <p className="text-emerald-800 font-black text-sm">Order submitted!</p>
@@ -456,12 +457,12 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
             <div key={vendor} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
 
               {/* Vendor header */}
-              <div className={`px-4 py-3 flex items-center gap-2 ${
-                (order.order_type ?? 'WEEKLY_FOOD') === 'BAR' ? 'bg-purple-600' :
-                (order.order_type ?? 'WEEKLY_FOOD') === 'IBG'  ? 'bg-indigo-600' :
-                'bg-teal-600'
-              }`}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <div className={`px-4 py-3 flex items-center gap-2 ${(order.order_type ?? 'WEEKLY_FOOD') === 'BAR' ? 'bg-purple-600' :
+                (order.order_type ?? 'WEEKLY_FOOD') === 'IBG Products' ? 'bg-indigo-600' :
+                  (order.order_type ?? 'WEEKLY_FOOD') === 'IBG Crockery' ? 'bg-rose-600' :
+                    'bg-teal-600'
+                }`}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
                 <span className="text-[11px] font-black uppercase tracking-widest text-white flex-1">{vendor}</span>
                 <span className="text-[10px] text-white/70 font-medium">{vLines.length} item{vLines.length !== 1 ? 's' : ''}</span>
               </div>
@@ -473,11 +474,11 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-800 leading-tight">{line.product_name}</p>
                       {line.category_name && (
-                        <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 mt-1 inline-block ${
-                          (order.order_type ?? 'WEEKLY_FOOD') === 'BAR' ? 'text-purple-700 bg-purple-50' :
-                          (order.order_type ?? 'WEEKLY_FOOD') === 'IBG'  ? 'text-indigo-700 bg-indigo-50' :
-                          'text-teal-700 bg-teal-50'
-                        }`}>
+                        <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 mt-1 inline-block ${(order.order_type ?? 'WEEKLY_FOOD') === 'BAR' ? 'text-purple-700 bg-purple-50' :
+                          (order.order_type ?? 'WEEKLY_FOOD') === 'IBG Products' ? 'text-indigo-700 bg-indigo-50' :
+                            (order.order_type ?? 'WEEKLY_FOOD') === 'IBG Crockery' ? 'text-rose-700 bg-rose-50' :
+                              'text-teal-700 bg-teal-50'
+                          }`}>
                           {line.category_name}
                         </span>
                       )}
@@ -504,7 +505,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
                         onClick={() => handleDeleteLine(line.id)}
                         className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                       </button>
                     </div>
                   </div>
@@ -520,7 +521,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
             onClick={() => setShowAddItems(true)}
             className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-200 text-slate-400 font-bold text-sm hover:border-ibg-400 hover:text-ibg-600 hover:bg-ibg-50 transition-all flex items-center justify-center gap-2"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Add Items
           </button>
         )}
@@ -534,92 +535,90 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
 
       {/* ── Footer ── */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 shadow-lg">
-      <div className="max-w-2xl mx-auto p-4 space-y-2">
-        {/* Delete order — Owner only, any status */}
-        {user.role === 'Owner' && (
-          confirmDelete ? (
-            <div className="flex items-center gap-2 justify-center py-1">
-              <span className="text-xs text-slate-500 font-semibold">Delete entire order?</span>
+        <div className="max-w-2xl mx-auto p-4 space-y-2">
+          {/* Delete order — Owner only, any status */}
+          {user.role === 'Owner' && (
+            confirmDelete ? (
+              <div className="flex items-center gap-2 justify-center py-1">
+                <span className="text-xs text-slate-500 font-semibold">Delete entire order?</span>
+                <button
+                  onClick={handleDeleteOrder}
+                  disabled={deleting}
+                  className="text-xs font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 px-3 py-1.5 rounded-xl hover:bg-rose-50 disabled:opacity-40 transition-colors"
+                >
+                  {deleting ? 'Deleting...' : 'Yes, delete'}
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="text-xs font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 px-3 py-1.5 rounded-xl hover:bg-slate-100 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={handleDeleteOrder}
-                disabled={deleting}
-                className="text-xs font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 px-3 py-1.5 rounded-xl hover:bg-rose-50 disabled:opacity-40 transition-colors"
+                onClick={() => setConfirmDelete(true)}
+                className="w-full py-2.5 rounded-2xl border border-rose-200 text-rose-500 font-black text-xs uppercase tracking-widest hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"
               >
-                {deleting ? 'Deleting...' : 'Yes, delete'}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                Delete Order
               </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                className="text-xs font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 px-3 py-1.5 rounded-xl hover:bg-slate-100 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
+            )
+          )}
+          {showSubmit && (
             <button
-              onClick={() => setConfirmDelete(true)}
-              className="w-full py-2.5 rounded-2xl border border-rose-200 text-rose-500 font-black text-xs uppercase tracking-widest hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-              Delete Order
-            </button>
-          )
-        )}
-        {showSubmit && (
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || lines.length === 0 || loading}
-            className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${
-              submitting || lines.length === 0 || loading
+              onClick={handleSubmit}
+              disabled={submitting || lines.length === 0 || loading}
+              className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${submitting || lines.length === 0 || loading
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 : 'bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] shadow-md shadow-teal-200'
-            }`}
-          >
-            {submitting ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
-                Submitting...
-              </span>
-            ) : `Submit Order — ${lines.length} Item${lines.length !== 1 ? 's' : ''}`}
-          </button>
-        )}
+                }`}
+            >
+              {submitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Submitting...
+                </span>
+              ) : `Submit Order — ${lines.length} Item${lines.length !== 1 ? 's' : ''}`}
+            </button>
+          )}
 
-        {canShare && (
-          <div className="flex gap-3">
-            <button
-              onClick={handleShare} disabled={sharing}
-              className={`flex-1 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2 ${
-                sharing
+          {canShare && (
+            <div className="flex gap-3">
+              <button
+                onClick={handleShare} disabled={sharing}
+                className={`flex-1 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2 ${sharing
                   ? 'border-slate-200 text-slate-400 bg-white cursor-not-allowed'
                   : 'border-teal-600 text-teal-600 bg-white hover:bg-teal-50 active:scale-[0.98]'
-              }`}
-            >
-              {sharing ? (
-                <>
-                  <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-                  Share Order
-                </>
-              )}
-            </button>
-            <button
-              onClick={submitted ? onSubmitted : onBack}
-              className="flex-1 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] shadow-md shadow-teal-200 transition-all"
-            >
-              Done
-            </button>
-          </div>
-        )}
-      </div>
+                  }`}
+              >
+                {sharing ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>
+                    Share Order
+                  </>
+                )}
+              </button>
+              <button
+                onClick={submitted ? onSubmitted : onBack}
+                className="flex-1 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] shadow-md shadow-teal-200 transition-all"
+              >
+                Done
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
     </div>

@@ -10,8 +10,9 @@ export interface Category {
   id: number;
   name: string;          // e.g. "PRODUCE", "MEATS", "SEA FOOD"
   sort_order: number;
-  order_type?: string;   // 'WEEKLY_FOOD' | 'BAR' | 'IBG'
+  order_type?: string;   // 'WEEKLY_FOOD' | 'BAR' | 'IBG Products' | 'IBG Crockery'
   created_at: string;
+  restaurant_id?: string;
 }
 
 export interface Vendor {
@@ -25,6 +26,7 @@ export interface Vendor {
   cutoff_day?: string;   // e.g. "MONDAY"
   cutoff_time?: string;  // e.g. "12:00:00"
   created_at: string;
+  restaurant_id?: string;
 }
 
 // ── Products ──────────────────────────────────────────────────────────────────
@@ -45,17 +47,20 @@ export interface Product {
   // Joined fields — populated when using select('*, categories(name), vendors(name)')
   categories?: { name: string; sort_order?: number; order_type?: string };
   vendors?: { name: string; code?: string };
+  restaurant_id?: string;
+  min_order?: number;
 }
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 
 export type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'SENT';
-export type OrderType = 'WEEKLY_FOOD' | 'BAR' | 'IBG';
+export type OrderType = 'WEEKLY_FOOD' | 'BAR' | 'IBG Products' | 'IBG Crockery';
 
 export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   WEEKLY_FOOD: 'Weekly Food',
   BAR: 'Bar',
-  IBG: 'IBG Order',
+  'IBG Products': 'IBG Order',
+  'IBG Crockery': 'IBG Crockery',
 };
 
 export interface Order {
@@ -73,6 +78,7 @@ export interface Order {
   notes?: string;
   created_at: string;
   updated_at: string;
+  restaurant_id?: string;
 }
 
 // ── Order Lines ───────────────────────────────────────────────────────────────

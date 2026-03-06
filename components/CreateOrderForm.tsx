@@ -51,24 +51,24 @@ const CreateOrderForm: React.FC<Props> = ({
 }) => {
   const isAddMode = !!existingOrder;
 
-  const [dueDate, setDueDate]       = useState(existingOrder?.due_date ?? isoDatePlusDays(2));
-  const [notes, setNotes]           = useState(existingOrder?.notes ?? '');
-  const [products, setProducts]     = useState<Product[]>([]);
+  const [dueDate, setDueDate] = useState(existingOrder?.due_date ?? isoDatePlusDays(2));
+  const [notes, setNotes] = useState(existingOrder?.notes ?? '');
+  const [products, setProducts] = useState<Product[]>([]);
   const [selections, setSelections] = useState<Map<number, SelectionState>>(new Map());
-  const [loading, setLoading]       = useState(true);
-  const [saving, setSaving]         = useState(false);
-  const [error, setError]           = useState<string | null>(null);
-  const [vendorFilter, setVendorFilter]     = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [vendorFilter, setVendorFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [searchFilter, setSearchFilter]     = useState('');
+  const [searchFilter, setSearchFilter] = useState('');
   const [allVendors, setAllVendors] = useState<Vendor[]>([]);
   const [vendorOverrides, setVendorOverrides] = useState<Map<number, VendorOverride>>(new Map());
   const [orderHistory, setOrderHistory] = useState<Record<number, ProductHistory>>({});
 
   useEffect(() => {
     loadProducts();
-    fetchVendors().then(setAllVendors).catch(() => {});
-    fetchLastOrderedByType(orderType).then(setOrderHistory).catch(() => {});
+    fetchVendors().then(setAllVendors).catch(() => { });
+    fetchLastOrderedByType(orderType).then(setOrderHistory).catch(() => { });
   }, []);
 
   const loadProducts = async () => {
@@ -93,7 +93,7 @@ const CreateOrderForm: React.FC<Props> = ({
     setSelections((prev) => {
       const next = new Map(prev);
       const cur = next.get(productId);
-      if (cur) next.set(productId, { ...cur, ...patch });
+      if (cur) next.set(productId, Object.assign({}, cur, patch));
       return next;
     });
   };
@@ -106,13 +106,13 @@ const CreateOrderForm: React.FC<Props> = ({
     setVendorOverrides((prev) => { const next = new Map(prev); next.delete(productId); return next; });
   };
 
-  const selectedCount = Array.from(selections.values()).filter((s) => s.selected).length;
+  const selectedCount = Array.from(selections.values() as unknown as SelectionState[]).filter((s) => s.selected).length;
 
   const orderTypeProducts = products.filter((p) => {
     const catOrderType = p.categories?.order_type;
     return !catOrderType || catOrderType === orderType;
   });
-  const vendors    = [...new Map(orderTypeProducts.filter((p) => p.vendors?.name).map((p) => [p.vendors!.name, p.vendors!.name])).values()].sort();
+  const vendors = [...new Map(orderTypeProducts.filter((p) => p.vendors?.name).map((p) => [p.vendors!.name, p.vendors!.name])).values()].sort();
   const categories = [...new Map(orderTypeProducts.filter((p) => p.categories?.name).map((p) => [p.categories!.name, p.categories!.name])).values()].sort();
 
   const filteredProducts = products.filter((p) => {
@@ -140,7 +140,7 @@ const CreateOrderForm: React.FC<Props> = ({
 
   const handleSubmit = async () => {
     if (!isAddMode && !dueDate) { setError('Please select a due date.'); return; }
-    if (selectedCount === 0)    { setError('Select at least one product.'); return; }
+    if (selectedCount === 0) { setError('Select at least one product.'); return; }
 
     for (const [pid, sel] of selections.entries()) {
       if (!sel.selected) continue;
@@ -163,11 +163,11 @@ const CreateOrderForm: React.FC<Props> = ({
           const qty = sel.qtyOverride ? parseFloat(sel.qtyOverride) : sel.qtyDropdown;
           const product = products.find((p) => p.id === pid);
           lines.push({
-            order_id:    existingOrder!.id,
-            product_id:  pid,
+            order_id: existingOrder!.id,
+            product_id: pid,
             qty_ordered: qty,
-            unit:        sel.unitOverride || product?.unit || undefined,
-            notes:       undefined,
+            unit: sel.unitOverride || product?.unit || undefined,
+            notes: undefined,
           });
         }
         await createOrderLines(lines);
@@ -177,12 +177,12 @@ const CreateOrderForm: React.FC<Props> = ({
         await Promise.all(permanentChanges.map(([pid, ov]) => updateProductVendor(pid, ov.vendorId)));
 
         const orderPayload: Omit<Order, 'id' | 'created_at' | 'updated_at'> = {
-          due_date:     dueDate,
+          due_date: dueDate,
           submitted_by: user.name,
           submitted_at: new Date().toISOString(),
-          status:       'DRAFT',
-          order_type:   orderType,
-          notes:        notes.trim() || undefined,
+          status: 'DRAFT',
+          order_type: orderType,
+          notes: notes.trim() || undefined,
         };
 
         const newOrder = await createOrder(orderPayload);
@@ -192,11 +192,11 @@ const CreateOrderForm: React.FC<Props> = ({
           const qty = sel.qtyOverride ? parseFloat(sel.qtyOverride) : sel.qtyDropdown;
           const product = products.find((p) => p.id === pid);
           lines.push({
-            order_id:    newOrder.id,
-            product_id:  pid,
+            order_id: newOrder.id,
+            product_id: pid,
             qty_ordered: qty,
-            unit:        sel.unitOverride || product?.unit || undefined,
-            notes:       undefined,
+            unit: sel.unitOverride || product?.unit || undefined,
+            notes: undefined,
           });
         }
         await createOrderLines(lines);
@@ -220,7 +220,7 @@ const CreateOrderForm: React.FC<Props> = ({
           disabled={saving}
           className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
         </button>
         <div className="flex-1 min-w-0">
           <p className="text-white/60 text-[9px] font-bold uppercase tracking-widest leading-none">
@@ -242,7 +242,7 @@ const CreateOrderForm: React.FC<Props> = ({
         {/* Context banner (add mode) or Due Date + Notes form */}
         {isAddMode ? (
           <div className="bg-ibg-50 border border-ibg-200 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#952D34" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#952D34" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
             <div>
               <p className="text-ibg-800 font-black text-xs uppercase tracking-widest">Due {fmtOrderDate(existingOrder!.due_date)}</p>
               {existingOrder!.notes && <p className="text-ibg-600 text-xs font-medium mt-0.5">{existingOrder!.notes}</p>}
@@ -361,7 +361,7 @@ const CreateOrderForm: React.FC<Props> = ({
                     selected: false, qtyDropdown: 1, qtyOverride: '', unitOverride: '',
                   };
                   const vendorOv = vendorOverrides.get(product.id);
-                  const effectiveVendorId   = vendorOv?.vendorId ?? product.vendor_id;
+                  const effectiveVendorId = vendorOv?.vendorId ?? product.vendor_id;
                   const effectiveVendorName = vendorOv
                     ? allVendors.find((v) => v.id === vendorOv.vendorId)?.name
                     : product.vendors?.name;
@@ -385,10 +385,17 @@ const CreateOrderForm: React.FC<Props> = ({
                                 // Pre-fill qty from history
                                 const presetQty = PRESET_QTYS.includes(history.qty) ? history.qty : 1;
                                 updateSelection(product.id, {
-                                  selected:      true,
-                                  qtyDropdown:   presetQty,
-                                  qtyOverride:   PRESET_QTYS.includes(history.qty) ? '' : String(history.qty),
-                                  unitOverride:  history.unit && history.unit !== product.unit ? history.unit : '',
+                                  selected: true,
+                                  qtyDropdown: presetQty,
+                                  qtyOverride: PRESET_QTYS.includes(history.qty) ? '' : String(history.qty),
+                                  unitOverride: history.unit && history.unit !== product.unit ? history.unit : '',
+                                });
+                              } else if (nowSelected && product.min_order) {
+                                // Pre-fill qty from min_order
+                                updateSelection(product.id, {
+                                  selected: true,
+                                  qtyDropdown: PRESET_QTYS.includes(product.min_order) ? product.min_order : 1,
+                                  qtyOverride: PRESET_QTYS.includes(product.min_order) ? '' : String(product.min_order),
                                 });
                               } else {
                                 updateSelection(product.id, { selected: nowSelected });
@@ -407,10 +414,12 @@ const CreateOrderForm: React.FC<Props> = ({
                               {vendorOv && !vendorOv.permanent && ' · order only'}
                               {vendorOv && vendorOv.permanent && ' · permanent'}
                             </span>
-                            <span className="text-[10px] text-slate-400 font-medium">{product.unit}</span>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              {product.unit} {product.min_order ? `(min: ${product.min_order})` : ''}
+                            </span>
                             {history && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 bg-indigo-50 rounded px-1.5 py-0.5">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                                 {history.qty}{history.unit ? ` ${history.unit}` : ''} · {fmtOrderDate(history.date)}
                               </span>
                             )}
@@ -424,7 +433,7 @@ const CreateOrderForm: React.FC<Props> = ({
                           {/* History hint */}
                           {history && (
                             <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                               <p className="text-[11px] text-indigo-700 font-semibold">
                                 Last ordered{' '}
                                 <span className="font-black">{history.qty}{history.unit ? ` ${history.unit}` : ''}</span>
@@ -499,22 +508,20 @@ const CreateOrderForm: React.FC<Props> = ({
                                   <button
                                     type="button"
                                     onClick={() => setVendorOverride(product.id, vendorOv.vendorId, false)}
-                                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-colors ${
-                                      !vendorOv.permanent
-                                        ? 'bg-amber-500 text-white border-amber-500'
-                                        : 'bg-white text-slate-500 border-slate-200'
-                                    }`}
+                                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-colors ${!vendorOv.permanent
+                                      ? 'bg-amber-500 text-white border-amber-500'
+                                      : 'bg-white text-slate-500 border-slate-200'
+                                      }`}
                                   >
                                     This order only
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setVendorOverride(product.id, vendorOv.vendorId, true)}
-                                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-colors ${
-                                      vendorOv.permanent
-                                        ? 'bg-ibg-600 text-white border-ibg-600'
-                                        : 'bg-white text-slate-500 border-slate-200'
-                                    }`}
+                                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-colors ${vendorOv.permanent
+                                      ? 'bg-ibg-600 text-white border-ibg-600'
+                                      : 'bg-white text-slate-500 border-slate-200'
+                                      }`}
                                   >
                                     Save permanently
                                   </button>
@@ -538,17 +545,16 @@ const CreateOrderForm: React.FC<Props> = ({
         <button
           onClick={handleSubmit}
           disabled={saving || selectedCount === 0 || (!isAddMode && !dueDate)}
-          className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${
-            saving || selectedCount === 0 || (!isAddMode && !dueDate)
-              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              : 'bg-ibg-600 text-white hover:bg-ibg-700 active:scale-[0.98] shadow-md shadow-ibg-200'
-          }`}
+          className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${saving || selectedCount === 0 || (!isAddMode && !dueDate)
+            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            : 'bg-ibg-600 text-white hover:bg-ibg-700 active:scale-[0.98] shadow-md shadow-ibg-200'
+            }`}
         >
           {saving ? (
             <span className="flex items-center justify-center gap-2">
               <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
               {isAddMode ? 'Adding Items...' : 'Saving Draft...'}
             </span>

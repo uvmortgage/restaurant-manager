@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
-import { User, Transaction, Receipt, CateringEvent, AppState, Restaurant } from './types';
+import { User, UserRole, Transaction, Receipt, CateringEvent, AppState, Restaurant } from './types';
 import { Order, OrderType } from './inventory-types';
 import { dataService } from './services/dataService';
+import { setActiveRestaurantId } from './services/supabaseClient';
 import Dashboard from './components/Dashboard';
 import CashManager from './components/CashManager';
 import ReceiptsManager from './components/ReceiptsManager';
@@ -71,17 +72,51 @@ const App: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedOrderType, setSelectedOrderType] = useState<OrderType>('WEEKLY_FOOD');
   const [isInitializing, setIsInitializing] = useState(true);
+  const [autoOpenAddItems, setAutoOpenAddItems] = useState(false);
   const [authError, setAuthError] = useState<string | undefined>();
+  const [simulatedRole, setSimulatedRole] = useState<UserRole | null>(null);
+  const [activeRestaurantIdState, setActiveRestaurantIdState] = useState<string | null>(null);
 
-  const loadDataAndEnter = async (appUser: User) => {
+  // Compute effective user: override role when simulating
+  const effectiveUser = useMemo(() => {
+    if (!state.currentUser) return null;
+    if (simulatedRole && isSuperAdmin(state.currentUser.email)) {
+      return { ...state.currentUser, role: simulatedRole };
+    }
+    return state.currentUser;
+  }, [state.currentUser, simulatedRole]);
+
+  const loadDataAndEnter = async (appUser: User, explicitRestaurantId?: string) => {
     try {
-      const [transactions, receipts, cateringEvents, users, restaurants] = await Promise.all([
+      // First, fetch restaurants to determine access and IDs
+      const restaurants = await dataService.getRestaurants();
+
+      // Determine which restaurant to load data for
+      let rIdToUse = explicitRestaurantId;
+      if (!rIdToUse) {
+        if (appUser.restaurant_id) {
+          rIdToUse = appUser.restaurant_id;
+        } else if (isSuperAdmin(appUser.email) && restaurants.length > 0) {
+          rIdToUse = restaurants.find(r => r.name === "Inchin's Bamboo Garden")?.id || restaurants[0].id;
+        }
+      }
+
+      if (rIdToUse) {
+        setActiveRestaurantId(rIdToUse);
+        setActiveRestaurantIdState(rIdToUse);
+      } else {
+        setActiveRestaurantId(null);
+        setActiveRestaurantIdState(null);
+      }
+
+      // Now fetch the data. The services will automatically scope using the activeRestaurantId
+      const [transactions, receipts, cateringEvents, users] = await Promise.all([
         dataService.getTransactions(),
         dataService.getReceipts(),
         dataService.getCateringEvents(),
         dataService.getUsers(),
-        dataService.getRestaurants(),
       ]);
+
       setState({ currentUser: appUser, transactions, receipts, cateringEvents, users, restaurants });
 
       // Route based on access level
@@ -156,7 +191,17 @@ const App: React.FC = () => {
   const handleLogout = () => {
     localStorage.removeItem(SESSION_KEY);
     setState({ currentUser: null, transactions: [], receipts: [], cateringEvents: [], users: [], restaurants: [] });
+    setSimulatedRole(null);
+    setActiveRestaurantId(null);
+    setActiveRestaurantIdState(null);
     setCurrentScreen('LOGIN');
+  };
+
+  const handleSwitchRestaurant = async (restaurantId: string) => {
+    if (!state.currentUser) return;
+    setIsInitializing(true);
+    await loadDataAndEnter(state.currentUser, restaurantId);
+    setIsInitializing(false);
   };
 
   const handleTransactionSubmit = async (transaction: Transaction) => {
@@ -241,26 +286,26 @@ const App: React.FC = () => {
 
   if (isInitializing) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
         <div className="relative mb-8">
-          <div className="w-24 h-24 border-8 border-ibg-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-24 h-24 border-8 border-t-ibg-600 rounded-full animate-spin"></div>
+          <div className="w-24 h-24 border-8 rounded-full" style={{ borderColor: 'rgba(20,184,166,0.15)' }}></div>
+          <div className="absolute top-0 left-0 w-24 h-24 border-8 border-t-ibg-500 rounded-full animate-spin" style={{ borderColor: 'rgba(20,184,166,0.15)', borderTopColor: '#14b8a6' }}></div>
         </div>
         <div className="flex flex-col items-center gap-1">
           <div className="flex items-center gap-2 mb-1">
             <svg width="20" height="20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="16" y="2" width="5" height="11" rx="2.5" fill="#0d9488"/>
-              <rect x="16" y="15" width="5" height="11" rx="2.5" fill="#0f766e"/>
-              <rect x="16" y="28" width="5" height="10" rx="2.5" fill="#0d9488"/>
-              <rect x="13" y="12" width="11" height="3.5" rx="1.75" fill="#14b8a6"/>
-              <rect x="13" y="25" width="11" height="3.5" rx="1.75" fill="#14b8a6"/>
-              <path d="M21 7.5 Q30 3 28 13 Q23 9 21 7.5Z" fill="#14b8a6"/>
-              <path d="M16 21 Q7 16 9 27 Q14 23 16 21Z" fill="#14b8a6"/>
+              <rect x="16" y="2" width="5" height="11" rx="2.5" fill="#14b8a6" />
+              <rect x="16" y="15" width="5" height="11" rx="2.5" fill="#0d9488" />
+              <rect x="16" y="28" width="5" height="10" rx="2.5" fill="#14b8a6" />
+              <rect x="13" y="12" width="11" height="3.5" rx="1.75" fill="#2dd4bf" />
+              <rect x="13" y="25" width="11" height="3.5" rx="1.75" fill="#2dd4bf" />
+              <path d="M21 7.5 Q30 3 28 13 Q23 9 21 7.5Z" fill="#14b8a6" />
+              <path d="M16 21 Q7 16 9 27 Q14 23 16 21Z" fill="#14b8a6" />
             </svg>
-            <span className="text-ibg-600 font-black text-xs uppercase tracking-[0.2em]">Inchin's Bamboo Garden</span>
+            <span className="font-black text-xs uppercase tracking-[0.2em]" style={{ color: '#14b8a6' }}>Inchin's Bamboo Garden</span>
           </div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">RestoHub</h2>
-          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] animate-pulse">Loading...</p>
+          <h2 className="text-2xl font-black tracking-tight uppercase" style={{ color: 'rgba(255,255,255,0.9)' }}>RestoHub</h2>
+          <p className="font-bold text-[10px] uppercase tracking-[0.3em] animate-pulse" style={{ color: 'rgba(255,255,255,0.3)' }}>Loading...</p>
         </div>
       </div>
     );
@@ -275,24 +320,28 @@ const App: React.FC = () => {
     switch (currentScreen) {
       case 'LOGIN':
         return (
-          <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-slate-50 relative overflow-hidden">
+          <div className="flex flex-col items-center justify-center min-h-screen p-6 relative overflow-hidden">
+            {/* Decorative orbs */}
+            <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full opacity-15 pointer-events-none" style={{ background: 'radial-gradient(circle, #14b8a6, transparent)' }}></div>
+            <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10 pointer-events-none" style={{ background: 'radial-gradient(circle, #f59e0b, transparent)' }}></div>
+
             <div className="mb-10 text-center animate-fadeIn relative z-10">
               {/* Bamboo Logo */}
-              <div className="w-24 h-24 bg-ibg-600 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-xl shadow-ibg-200">
+              <div className="w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-5" style={{ background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%)', boxShadow: '0 8px 32px rgba(20,184,166,0.3)' }}>
                 <svg width="52" height="52" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="14" y="2" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.95"/>
-                  <rect x="14" y="15" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.8"/>
-                  <rect x="14" y="28" width="5" height="10" rx="2.5" fill="white" fillOpacity="0.95"/>
-                  <rect x="11" y="12" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.6"/>
-                  <rect x="11" y="25" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.6"/>
-                  <path d="M19 7.5 Q28 3 26 13 Q21 9 19 7.5Z" fill="white" fillOpacity="0.7"/>
-                  <path d="M14 21 Q5 16 7 27 Q12 23 14 21Z" fill="white" fillOpacity="0.7"/>
+                  <rect x="14" y="2" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.95" />
+                  <rect x="14" y="15" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.8" />
+                  <rect x="14" y="28" width="5" height="10" rx="2.5" fill="white" fillOpacity="0.95" />
+                  <rect x="11" y="12" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.6" />
+                  <rect x="11" y="25" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.6" />
+                  <path d="M19 7.5 Q28 3 26 13 Q21 9 19 7.5Z" fill="white" fillOpacity="0.7" />
+                  <path d="M14 21 Q5 16 7 27 Q12 23 14 21Z" fill="white" fillOpacity="0.7" />
                 </svg>
               </div>
               <div className="space-y-1">
-                <p className="text-ibg-600 font-black text-[11px] uppercase tracking-[0.25em]">Inchin's Bamboo Garden</p>
-                <h1 className="text-3xl font-black text-slate-900 tracking-tight">RestoHub</h1>
-                <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">South Charlotte · Management Portal</p>
+                <p className="font-black text-[11px] uppercase tracking-[0.25em]" style={{ color: '#14b8a6' }}>Inchin's Bamboo Garden</p>
+                <h1 className="text-3xl font-black tracking-tight" style={{ color: 'rgba(255,255,255,0.95)' }}>RestoHub</h1>
+                <p className="font-bold text-[10px] uppercase tracking-[0.2em]" style={{ color: 'rgba(255,255,255,0.3)' }}>South Charlotte · Management Portal</p>
               </div>
             </div>
 
@@ -304,13 +353,14 @@ const App: React.FC = () => {
                 shape="pill"
                 size="large"
                 text="signin_with"
+                theme="filled_black"
               />
               {authError && (
-                <p className="text-center text-xs text-rose-500 font-medium">{authError}</p>
+                <p className="text-center text-xs text-rose-400 font-medium">{authError}</p>
               )}
             </div>
 
-            <p className="mt-16 text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center">
+            <p className="mt-16 text-[9px] font-bold uppercase tracking-widest text-center" style={{ color: 'rgba(255,255,255,0.15)' }}>
               Authorized Staff Only
             </p>
           </div>
@@ -339,19 +389,25 @@ const App: React.FC = () => {
       case 'DASHBOARD':
         return (
           <Dashboard
-            user={state.currentUser!}
+            user={effectiveUser!}
+            realUser={state.currentUser!}
             transactions={state.transactions}
             receipts={state.receipts}
             cateringEvents={state.cateringEvents}
             onNavigate={(screen) => setCurrentScreen(screen as Screen)}
             onLogout={handleLogout}
+            simulatedRole={simulatedRole}
+            onSimulateRole={setSimulatedRole}
+            restaurants={state.restaurants}
+            activeRestaurantId={activeRestaurantIdState}
+            onSwitchRestaurant={handleSwitchRestaurant}
           />
         );
 
       case 'CASH_MANAGER':
         return (
           <CashManager
-            user={state.currentUser!}
+            user={effectiveUser!}
             transactions={state.transactions}
             onAddCash={() => setCurrentScreen('ADD_CASH')}
             onPaySalary={() => setCurrentScreen('PAY_SALARY')}
@@ -398,7 +454,7 @@ const App: React.FC = () => {
 
       case 'EDIT_USER':
         return selectedUser ? (
-          <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+          <div className="min-h-screen flex items-center justify-center p-4">
             <UserForm
               user={selectedUser}
               onSubmit={handleUserSubmit}
@@ -412,7 +468,7 @@ const App: React.FC = () => {
 
       case 'ADD_CASH':
         return (
-          <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+          <div className="min-h-screen flex items-center justify-center p-4">
             <AddCashForm
               currentUser={state.currentUser!}
               onSubmit={handleTransactionSubmit}
@@ -477,8 +533,9 @@ const App: React.FC = () => {
               setSelectedOrderType(orderType);
               setCurrentScreen('CREATE_ORDER');
             }}
-            onViewOrder={(order) => {
+            onViewOrder={(order, openAddItems) => {
               setSelectedOrder(order);
+              setAutoOpenAddItems(openAddItems || false);
               setCurrentScreen('ORDER_REVIEW');
             }}
             onBack={() => setCurrentScreen('DASHBOARD')}
@@ -500,20 +557,25 @@ const App: React.FC = () => {
           <OrderReview
             user={state.currentUser!}
             order={selectedOrder}
+            initialShowAddItems={autoOpenAddItems}
             onBack={() => {
               setSelectedOrder(null);
+              setAutoOpenAddItems(false);
               setCurrentScreen('INVENTORY_MANAGER');
             }}
             onSubmitted={() => {
               setSelectedOrder(null);
+              setAutoOpenAddItems(false);
               setCurrentScreen('INVENTORY_MANAGER');
             }}
             onDeleted={() => {
               setSelectedOrder(null);
+              setAutoOpenAddItems(false);
               setCurrentScreen('INVENTORY_MANAGER');
             }}
             onDuplicated={(newOrder) => {
               setSelectedOrder(newOrder);
+              setAutoOpenAddItems(true);
             }}
           />
         ) : null;
@@ -523,10 +585,10 @@ const App: React.FC = () => {
     }
   };
 
-  const isFullWidth = ['INVENTORY_MANAGER', 'CREATE_ORDER', 'ORDER_REVIEW', 'ADMIN_PANEL', 'REQUEST_ACCESS'].includes(currentScreen);
+  const isFullWidth = ['DASHBOARD', 'INVENTORY_MANAGER', 'CREATE_ORDER', 'ORDER_REVIEW', 'ADMIN_PANEL', 'REQUEST_ACCESS'].includes(currentScreen);
 
   return (
-    <div className={`min-h-screen bg-slate-50 relative flex flex-col overflow-x-hidden ${isFullWidth ? '' : 'max-w-lg mx-auto shadow-2xl'}`}>
+    <div className={`min-h-screen relative flex flex-col overflow-x-hidden ${isFullWidth ? '' : 'max-w-lg mx-auto'}`} style={{ background: 'transparent' }}>
       {renderScreen()}
       {!isFullWidth && (
         <>

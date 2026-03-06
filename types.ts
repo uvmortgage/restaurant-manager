@@ -18,6 +18,11 @@ export interface Restaurant {
   admin_email: string;
   is_active: boolean;
   created_at?: string;
+  enable_inventory?: boolean;
+  enable_cash?: boolean;
+  enable_users?: boolean;
+  enable_catering?: boolean;
+  enable_receipts?: boolean;
 }
 
 export interface AccessRequest {
@@ -48,6 +53,7 @@ export interface Transaction {
   fund_source: 'Pool' | 'Cash';
   signature?: string;
   receipt_photo?: string;
+  restaurant_id?: string;
 }
 
 export type ReceiptCategory = 'RD' | 'Walmart' | 'Indian' | 'Chinese' | 'Other';
@@ -61,6 +67,7 @@ export interface Receipt {
   photo: string;
   logged_by: string;
   status: 'Synced' | 'Pending';
+  restaurant_id?: string;
 }
 
 export type PaymentMethod = 'Cash' | 'Zelle' | 'Card';
@@ -79,6 +86,7 @@ export interface CateringEvent {
   payment_timestamp?: string;
   logged_by: string;
   payment_logged_by?: string;
+  restaurant_id?: string;
 }
 
 export interface AppState {

@@ -1,5 +1,5 @@
 
-import { supabase } from './supabaseClient';
+import { supabase, getActiveRestaurantId } from './supabaseClient';
 import { User, Transaction, Receipt, CateringEvent, Restaurant, AccessRequest } from '../types';
 
 const OWNER_EMAILS = new Set(['sri7576@gmail.com', 'Sree.m2608@gmail.com']);
@@ -57,15 +57,17 @@ export const dataService = {
   // ── Transactions ─────────────────────────────────────────────────────────────
 
   getTransactions: async (): Promise<Transaction[]> => {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .order('timestamp', { ascending: false });
+    let q = supabase.from('transactions').select('*').order('timestamp', { ascending: false });
+    const rId = getActiveRestaurantId();
+    if (rId) q = q.eq('restaurant_id', rId);
+    const { data, error } = await q;
     if (error) console.error('getTransactions error:', error);
     return (data ?? []) as Transaction[];
   },
 
   saveTransaction: async (transaction: Transaction): Promise<void> => {
+    const rId = getActiveRestaurantId();
+    if (rId) transaction.restaurant_id = rId;
     const { error } = await supabase.from('transactions').insert(transaction);
     if (error) throw new Error(error.message);
   },
@@ -73,15 +75,17 @@ export const dataService = {
   // ── Receipts ─────────────────────────────────────────────────────────────────
 
   getReceipts: async (): Promise<Receipt[]> => {
-    const { data, error } = await supabase
-      .from('receipts')
-      .select('*')
-      .order('timestamp', { ascending: false });
+    let q = supabase.from('receipts').select('*').order('timestamp', { ascending: false });
+    const rId = getActiveRestaurantId();
+    if (rId) q = q.eq('restaurant_id', rId);
+    const { data, error } = await q;
     if (error) console.error('getReceipts error:', error);
     return (data ?? []) as Receipt[];
   },
 
   saveReceipt: async (receipt: Receipt): Promise<void> => {
+    const rId = getActiveRestaurantId();
+    if (rId) receipt.restaurant_id = rId;
     const { error } = await supabase.from('receipts').insert(receipt);
     if (error) throw new Error(error.message);
   },
@@ -89,15 +93,17 @@ export const dataService = {
   // ── Catering Events ──────────────────────────────────────────────────────────
 
   getCateringEvents: async (): Promise<CateringEvent[]> => {
-    const { data, error } = await supabase
-      .from('catering_events')
-      .select('*')
-      .order('timestamp', { ascending: false });
+    let q = supabase.from('catering_events').select('*').order('timestamp', { ascending: false });
+    const rId = getActiveRestaurantId();
+    if (rId) q = q.eq('restaurant_id', rId);
+    const { data, error } = await q;
     if (error) console.error('getCateringEvents error:', error);
     return (data ?? []) as CateringEvent[];
   },
 
   saveCateringEvent: async (event: CateringEvent): Promise<void> => {
+    const rId = getActiveRestaurantId();
+    if (rId) event.restaurant_id = rId;
     const { error } = await supabase.from('catering_events').insert(event);
     if (error) throw new Error(error.message);
   },

@@ -1,44 +1,56 @@
-import { supabase } from './supabaseClient';
+import { supabase, getActiveRestaurantId } from './supabaseClient';
 import { Product, Order, OrderLine, OrderLineDetail, Vendor, Category } from '../inventory-types';
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
 export async function fetchProducts(): Promise<Product[]> {
-  const { data, error } = await supabase
+  let q = supabase
     .from('products')
     .select('*, categories(name, sort_order, order_type), vendors(name, code)')
     .eq('is_active', true)
     .order('name');
+  const rId = getActiveRestaurantId();
+  if (rId) q = q.eq('restaurant_id', rId);
 
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return (data ?? []) as Product[];
 }
 
 export async function fetchAllProducts(): Promise<Product[]> {
-  const { data, error } = await supabase
+  let q = supabase
     .from('products')
     .select('*, categories(name, sort_order, order_type), vendors(name, code)')
     .order('name');
+  const rId = getActiveRestaurantId();
+  if (rId) q = q.eq('restaurant_id', rId);
 
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return (data ?? []) as Product[];
 }
 
 export async function fetchVendors(): Promise<Vendor[]> {
-  const { data, error } = await supabase
+  let q = supabase
     .from('vendors')
     .select('id, name, code')
     .eq('is_active', true)
     .order('name');
+  const rId = getActiveRestaurantId();
+  if (rId) q = q.eq('restaurant_id', rId);
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return (data ?? []) as Vendor[];
 }
 
 export async function fetchCategories(): Promise<Category[]> {
-  const { data, error } = await supabase
+  let q = supabase
     .from('categories')
     .select('*')
     .order('sort_order');
+  const rId = getActiveRestaurantId();
+  if (rId) q = q.eq('restaurant_id', rId);
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return (data ?? []) as Category[];
 }
@@ -52,11 +64,15 @@ export async function updateProductVendor(productId: number, vendorId: number): 
 }
 
 export async function createProduct(
-  payload: Pick<Product, 'name' | 'category_id' | 'vendor_id' | 'unit'> & { notes?: string }
+  payload: Pick<Product, 'name' | 'category_id' | 'vendor_id' | 'unit'> & { notes?: string, min_order?: number }
 ): Promise<Product> {
+  const finalPayload: any = { ...payload, is_active: true };
+  const rId = getActiveRestaurantId();
+  if (rId) finalPayload.restaurant_id = rId;
+
   const { data, error } = await supabase
     .from('products')
-    .insert({ ...payload, is_active: true })
+    .insert(finalPayload)
     .select('*, categories(name, sort_order, order_type), vendors(name, code)')
     .single();
   if (error) throw new Error(error.message);
@@ -65,7 +81,7 @@ export async function createProduct(
 
 export async function updateProduct(
   id: number,
-  payload: Partial<Pick<Product, 'name' | 'category_id' | 'vendor_id' | 'unit' | 'notes' | 'is_active'>>
+  payload: Partial<Pick<Product, 'name' | 'category_id' | 'vendor_id' | 'unit' | 'notes' | 'is_active' | 'min_order'>>
 ): Promise<void> {
   const { error } = await supabase
     .from('products')
@@ -85,11 +101,14 @@ export async function softDeleteProduct(id: number): Promise<void> {
 // ── Orders ────────────────────────────────────────────────────────────────────
 
 export async function fetchOrders(): Promise<Order[]> {
-  const { data, error } = await supabase
+  let q = supabase
     .from('orders')
     .select('*')
     .order('created_at', { ascending: false });
+  const rId = getActiveRestaurantId();
+  if (rId) q = q.eq('restaurant_id', rId);
 
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return (data ?? []) as Order[];
 }
@@ -97,9 +116,13 @@ export async function fetchOrders(): Promise<Order[]> {
 export async function createOrder(
   payload: Omit<Order, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Order> {
+  const finalPayload: any = { ...payload };
+  const rId = getActiveRestaurantId();
+  if (rId) finalPayload.restaurant_id = rId;
+
   const { data, error } = await supabase
     .from('orders')
-    .insert(payload)
+    .insert(finalPayload)
     .select()
     .single();
 
@@ -209,13 +232,17 @@ export interface ProductHistory {
 export async function fetchLastOrderedByType(
   orderType: string
 ): Promise<Record<number, ProductHistory>> {
-  const { data: orders, error: ordErr } = await supabase
+  let q = supabase
     .from('orders')
     .select('id, due_date')
     .eq('order_type', orderType)
     .in('status', ['SUBMITTED', 'APPROVED', 'SENT'])
     .order('due_date', { ascending: false })
     .limit(100);
+  const rId = getActiveRestaurantId();
+  if (rId) q = q.eq('restaurant_id', rId);
+
+  const { data: orders, error: ordErr } = await q;
 
   if (ordErr) throw new Error(ordErr.message);
   if (!orders?.length) return {};

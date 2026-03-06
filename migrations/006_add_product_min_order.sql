@@ -1,0 +1,1 @@
+ALTER TABLE ibgsc.products ADD COLUMN min_order NUMERIC;

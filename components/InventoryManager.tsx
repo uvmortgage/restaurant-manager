@@ -11,6 +11,8 @@ import {
   updateProduct,
   softDeleteProduct,
   deleteOrder,
+  createOrder,
+  createOrderLines,
 } from '../services/inventoryService';
 
 type ActiveTab = 'orders' | 'products';
@@ -19,39 +21,42 @@ type OrderTypeFilter = 'ALL' | OrderType;
 interface Props {
   user: User;
   onCreateOrder: (orderType: OrderType) => void;
-  onViewOrder: (order: Order) => void;
+  onViewOrder: (order: Order, autoOpenAddItems?: boolean) => void;
   onBack: () => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  DRAFT:     'bg-slate-100 text-slate-600',
+  DRAFT: 'bg-slate-100 text-slate-600',
   SUBMITTED: 'bg-amber-100 text-amber-700',
-  APPROVED:  'bg-emerald-100 text-emerald-700',
-  SENT:      'bg-blue-100 text-blue-700',
+  APPROVED: 'bg-emerald-100 text-emerald-700',
+  SENT: 'bg-blue-100 text-blue-700',
 };
 
 const ORDER_TYPE_COLORS: Record<string, string> = {
   WEEKLY_FOOD: 'bg-teal-100 text-teal-700',
-  BAR:         'bg-purple-100 text-purple-700',
-  IBG:         'bg-indigo-100 text-indigo-700',
+  BAR: 'bg-purple-100 text-purple-700',
+  'IBG Products': 'bg-indigo-100 text-indigo-700',
+  'IBG Crockery': 'bg-rose-100 text-rose-700',
 };
 
 const ORDER_TYPE_HEADER_COLORS: Record<string, string> = {
   WEEKLY_FOOD: 'bg-teal-600',
-  BAR:         'bg-purple-600',
-  IBG:         'bg-indigo-600',
+  BAR: 'bg-purple-600',
+  'IBG Products': 'bg-indigo-600',
+  'IBG Crockery': 'bg-rose-600',
 };
 
 const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
   WEEKLY_FOOD: 'bg-teal-100 text-teal-700',
-  BAR:         'bg-purple-100 text-purple-700',
-  IBG:         'bg-indigo-100 text-indigo-700',
+  BAR: 'bg-purple-100 text-purple-700',
+  'IBG Products': 'bg-indigo-100 text-indigo-700',
 };
 
 const ORDER_TYPE_ICONS: Record<string, string> = {
   WEEKLY_FOOD: '🥦',
-  BAR:         '🍺',
-  IBG:         '🏮',
+  BAR: '🍺',
+  'IBG Products': '🏮',
+  'IBG Crockery': '🍽️',
 };
 
 interface ProductFormState {
@@ -60,9 +65,10 @@ interface ProductFormState {
   vendor_id: string;
   unit: string;
   notes: string;
+  min_order: string;
 }
 
-const EMPTY_FORM: ProductFormState = { name: '', category_id: '', vendor_id: '', unit: '', notes: '' };
+const EMPTY_FORM: ProductFormState = { name: '', category_id: '', vendor_id: '', unit: '', notes: '', min_order: '' };
 
 // ── IBG Brand Header ──────────────────────────────────────────────────────────
 const BrandHeader: React.FC<{ onBack: () => void; title: string; subtitle?: string; action?: React.ReactNode }> = ({
@@ -73,17 +79,17 @@ const BrandHeader: React.FC<{ onBack: () => void; title: string; subtitle?: stri
       onClick={onBack}
       className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors shrink-0 border border-white/20"
     >
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
     </button>
     <div className="flex items-center gap-2 flex-1 min-w-0">
       <svg width="20" height="20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
-        <rect x="14" y="2" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.95"/>
-        <rect x="14" y="15" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.8"/>
-        <rect x="14" y="28" width="5" height="10" rx="2.5" fill="white" fillOpacity="0.95"/>
-        <rect x="11" y="12" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.5"/>
-        <rect x="11" y="25" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.5"/>
-        <path d="M19 7.5 Q28 3 26 13 Q21 9 19 7.5Z" fill="white" fillOpacity="0.65"/>
-        <path d="M14 21 Q5 16 7 27 Q12 23 14 21Z" fill="white" fillOpacity="0.65"/>
+        <rect x="14" y="2" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.95" />
+        <rect x="14" y="15" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.8" />
+        <rect x="14" y="28" width="5" height="10" rx="2.5" fill="white" fillOpacity="0.95" />
+        <rect x="11" y="12" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.5" />
+        <rect x="11" y="25" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.5" />
+        <path d="M19 7.5 Q28 3 26 13 Q21 9 19 7.5Z" fill="white" fillOpacity="0.65" />
+        <path d="M14 21 Q5 16 7 27 Q12 23 14 21Z" fill="white" fillOpacity="0.65" />
       </svg>
       <div className="min-w-0">
         <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest leading-none">Inchin's Bamboo Garden</p>
@@ -107,6 +113,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const [deletingOrderId, setDeletingOrderId] = useState<number | null>(null);
   const [confirmDeleteOrderId, setConfirmDeleteOrderId] = useState<number | null>(null);
   const [deleteOrderError, setDeleteOrderError] = useState<string | null>(null);
+  const [duplicatingOrderId, setDuplicatingOrderId] = useState<number | null>(null);
 
   // ── Products tab state ────────────────────────────────────────────────────
   const [products, setProducts] = useState<Product[]>([]);
@@ -162,6 +169,38 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     }
   };
 
+  const handleDuplicateOrder = async (order: Order) => {
+    setDuplicatingOrderId(Number(order.id));
+    setOrdersError(null);
+    try {
+      const lines = await fetchOrderLines(Number(order.id));
+      const d = new Date(); d.setDate(d.getDate() + 2);
+      const newOrder = await createOrder({
+        due_date: d.toISOString().split('T')[0],
+        submitted_by: user.name,
+        status: 'DRAFT',
+        order_type: (order.order_type ?? 'WEEKLY_FOOD') as OrderType,
+        notes: order.notes,
+      });
+      if (lines.length > 0) {
+        await createOrderLines(
+          lines.map((l) => ({
+            order_id: newOrder.id,
+            product_id: l.product_id,
+            qty_ordered: l.qty_ordered,
+            unit: l.unit,
+            notes: l.notes,
+          }))
+        );
+      }
+      onViewOrder({ ...newOrder, line_count: lines.length }, true);
+    } catch (e: any) {
+      setOrdersError(e.message ?? 'Failed to duplicate order');
+    } finally {
+      setDuplicatingOrderId(null);
+    }
+  };
+
   // ── Load products (lazy) ───────────────────────────────────────────────────
   useEffect(() => {
     if (activeTab === 'products' && products.length === 0 && !prodLoading) {
@@ -212,19 +251,20 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
 
   // ── Product handlers ───────────────────────────────────────────────────────
   const handleAddProduct = async () => {
-    if (!addForm.name.trim())    { setAddError('Product name is required.'); return; }
-    if (!addForm.category_id)    { setAddError('Category is required.'); return; }
-    if (!addForm.vendor_id)      { setAddError('Vendor is required.'); return; }
-    if (!addForm.unit.trim())    { setAddError('Unit is required (e.g. lbs, pcs).'); return; }
+    if (!addForm.name.trim()) { setAddError('Product name is required.'); return; }
+    if (!addForm.category_id) { setAddError('Category is required.'); return; }
+    if (!addForm.vendor_id) { setAddError('Vendor is required.'); return; }
+    if (!addForm.unit.trim()) { setAddError('Unit is required (e.g. lbs, pcs).'); return; }
     setAddSaving(true);
     setAddError(null);
     try {
       const created = await createProduct({
-        name:        addForm.name.trim(),
+        name: addForm.name.trim(),
         category_id: Number(addForm.category_id),
-        vendor_id:   Number(addForm.vendor_id),
-        unit:        addForm.unit.trim(),
-        notes:       addForm.notes.trim() || undefined,
+        vendor_id: Number(addForm.vendor_id),
+        unit: addForm.unit.trim(),
+        notes: addForm.notes.trim() || undefined,
+        min_order: addForm.min_order ? Number(addForm.min_order) : undefined,
       });
       setProducts((prev) => [created, ...prev].sort((a, b) => a.name.localeCompare(b.name)));
       setShowAddForm(false);
@@ -239,11 +279,12 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const startEdit = (p: Product) => {
     setEditingId(p.id);
     setEditForm({
-      name:        p.name,
+      name: p.name,
       category_id: String(p.category_id),
-      vendor_id:   String(p.vendor_id),
-      unit:        p.unit,
-      notes:       p.notes ?? '',
+      vendor_id: String(p.vendor_id),
+      unit: p.unit,
+      notes: p.notes ?? '',
+      min_order: p.min_order?.toString() ?? '',
     });
     setEditError(null);
   };
@@ -255,29 +296,31 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     setEditError(null);
     try {
       await updateProduct(id, {
-        name:        editForm.name.trim(),
+        name: editForm.name.trim(),
         category_id: Number(editForm.category_id),
-        vendor_id:   Number(editForm.vendor_id),
-        unit:        editForm.unit.trim(),
-        notes:       editForm.notes.trim() || undefined,
+        vendor_id: Number(editForm.vendor_id),
+        unit: editForm.unit.trim(),
+        notes: editForm.notes.trim() || undefined,
+        min_order: editForm.min_order ? Number(editForm.min_order) : undefined,
       });
       setProducts((prev) =>
         prev.map((p) =>
           p.id === id
             ? {
-                ...p,
-                name:        editForm.name.trim(),
-                category_id: Number(editForm.category_id),
-                vendor_id:   Number(editForm.vendor_id),
-                unit:        editForm.unit.trim(),
-                notes:       editForm.notes.trim() || undefined,
-                categories:  categories.find((c) => c.id === Number(editForm.category_id))
-                               ? { name: categories.find((c) => c.id === Number(editForm.category_id))!.name, order_type: categories.find((c) => c.id === Number(editForm.category_id))!.order_type }
-                               : p.categories,
-                vendors:     vendors.find((v) => v.id === Number(editForm.vendor_id))
-                               ? { name: vendors.find((v) => v.id === Number(editForm.vendor_id))!.name }
-                               : p.vendors,
-              }
+              ...p,
+              name: editForm.name.trim(),
+              category_id: Number(editForm.category_id),
+              vendor_id: Number(editForm.vendor_id),
+              unit: editForm.unit.trim(),
+              notes: editForm.notes.trim() || undefined,
+              min_order: editForm.min_order ? Number(editForm.min_order) : undefined,
+              categories: categories.find((c) => c.id === Number(editForm.category_id))
+                ? { name: categories.find((c) => c.id === Number(editForm.category_id))!.name, order_type: categories.find((c) => c.id === Number(editForm.category_id))!.order_type }
+                : p.categories,
+              vendors: vendors.find((v) => v.id === Number(editForm.vendor_id))
+                ? { name: vendors.find((v) => v.id === Number(editForm.vendor_id))!.name }
+                : p.vendors,
+            }
             : p
         )
       );
@@ -330,11 +373,12 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
         setBulkEdits((e) => ({
           ...e,
           [p.id]: {
-            name:        p.name,
+            name: p.name,
             category_id: String(p.category_id),
-            vendor_id:   String(p.vendor_id),
-            unit:        p.unit,
-            notes:       p.notes ?? '',
+            vendor_id: String(p.vendor_id),
+            unit: p.unit,
+            notes: p.notes ?? '',
+            min_order: p.min_order?.toString() ?? '',
           },
         }));
       }
@@ -344,16 +388,17 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
 
   const selectAllVisible = () => {
     const newEdits: Record<number, ProductFormState> = { ...bulkEdits };
-    const newSelected = new Set(bulkSelected);
+    const newSelected = new Set<number>(bulkSelected);
     filteredProducts.forEach((p) => {
       if (!newSelected.has(p.id)) {
         newSelected.add(p.id);
         newEdits[p.id] = {
-          name:        p.name,
+          name: p.name,
           category_id: String(p.category_id),
-          vendor_id:   String(p.vendor_id),
-          unit:        p.unit,
-          notes:       p.notes ?? '',
+          vendor_id: String(p.vendor_id),
+          unit: p.unit,
+          notes: p.notes ?? '',
+          min_order: p.min_order?.toString() ?? '',
         };
       }
     });
@@ -375,15 +420,17 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     let saved = 0;
     let failed = 0;
     const results = await Promise.allSettled(
-      Array.from(bulkSelected).map(async (id) => {
-        const form = bulkEdits[id];
+      Array.from(bulkSelected).map(async (id: unknown) => {
+        const numId = id as number;
+        const form = bulkEdits[numId];
         if (!form) return;
-        await updateProduct(id, {
-          name:        form.name.trim(),
+        await updateProduct(numId, {
+          name: form.name.trim(),
           category_id: Number(form.category_id),
-          vendor_id:   Number(form.vendor_id),
-          unit:        form.unit.trim(),
-          notes:       form.notes.trim() || undefined,
+          vendor_id: Number(form.vendor_id),
+          unit: form.unit.trim(),
+          notes: form.notes.trim() || undefined,
+          min_order: form.min_order ? Number(form.min_order) : undefined,
         });
         return id;
       })
@@ -398,17 +445,17 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
         if (!form) return p;
         return {
           ...p,
-          name:        form.name.trim(),
+          name: form.name.trim(),
           category_id: Number(form.category_id),
-          vendor_id:   Number(form.vendor_id),
-          unit:        form.unit.trim(),
-          notes:       form.notes.trim() || undefined,
-          categories:  categories.find((c) => c.id === Number(form.category_id))
-                         ? { name: categories.find((c) => c.id === Number(form.category_id))!.name, order_type: categories.find((c) => c.id === Number(form.category_id))!.order_type }
-                         : p.categories,
-          vendors:     vendors.find((v) => v.id === Number(form.vendor_id))
-                         ? { name: vendors.find((v) => v.id === Number(form.vendor_id))!.name }
-                         : p.vendors,
+          vendor_id: Number(form.vendor_id),
+          unit: form.unit.trim(),
+          notes: form.notes.trim() || undefined,
+          categories: categories.find((c) => c.id === Number(form.category_id))
+            ? { name: categories.find((c) => c.id === Number(form.category_id))!.name, order_type: categories.find((c) => c.id === Number(form.category_id))!.order_type }
+            : p.categories,
+          vendors: vendors.find((v) => v.id === Number(form.vendor_id))
+            ? { name: vendors.find((v) => v.id === Number(form.vendor_id))!.name }
+            : p.vendors,
         };
       })
     );
@@ -465,7 +512,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
 
   // ── Group products: order_type → {catSortOrder, products[]} ───────────────
   const groupedProducts = useMemo(() => {
-    const typeOrder: OrderType[] = ['WEEKLY_FOOD', 'BAR', 'IBG'];
+    const typeOrder: OrderType[] = ['WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'];
     const groups: Record<string, { catName: string; catSortOrder: number; products: Product[] }[]> = {};
 
     typeOrder.forEach((ot) => {
@@ -508,27 +555,26 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
               }}
               className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border border-white/20"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
               New Order
             </button>
           ) : (
             <div className="flex items-center gap-2">
               <button
                 onClick={toggleBulkEditMode}
-                className={`hidden lg:flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border ${
-                  bulkEditMode
-                    ? 'bg-amber-400 text-amber-900 hover:bg-amber-300 border-amber-300'
-                    : 'bg-white/20 hover:bg-white/30 text-white border-white/20'
-                }`}
+                className={`hidden lg:flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border ${bulkEditMode
+                  ? 'bg-amber-400 text-amber-900 hover:bg-amber-300 border-amber-300'
+                  : 'bg-white/20 hover:bg-white/30 text-white border-white/20'
+                  }`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                 {bulkEditMode ? 'Exit Bulk' : 'Bulk Edit'}
               </button>
               <button
                 onClick={() => { setShowAddForm((v) => !v); setAddError(null); }}
                 className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border border-white/20"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 Add Product
               </button>
             </div>
@@ -542,11 +588,10 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`py-3 px-5 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${
-              activeTab === tab
-                ? 'border-ibg-600 text-ibg-600'
-                : 'border-transparent text-slate-400 hover:text-slate-600'
-            }`}
+            className={`py-3 px-5 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeTab === tab
+              ? 'border-ibg-600 text-ibg-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
           >
             {tab === 'orders' ? 'Orders' : 'Products'}
           </button>
@@ -558,15 +603,14 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
         <div className="flex-1">
           {/* Type filter */}
           <div className="px-4 pt-4 pb-2 flex gap-2 overflow-x-auto bg-white border-b border-slate-50">
-            {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG'] as OrderTypeFilter[]).map((t) => (
+            {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as OrderTypeFilter[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTypeFilter(t)}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${
-                  typeFilter === t
-                    ? 'bg-ibg-600 text-white border-ibg-600'
-                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                }`}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${typeFilter === t
+                  ? 'bg-ibg-600 text-white border-ibg-600'
+                  : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                  }`}
               >
                 {t === 'ALL' ? 'All Orders' : `${ORDER_TYPE_ICONS[t]} ${ORDER_TYPE_LABELS[t as OrderType]}`}
               </button>
@@ -581,7 +625,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                   <div className="w-1 h-5 bg-ibg-600 rounded-full"></div>
                   <h2 className="text-base font-black text-slate-900 uppercase tracking-widest">Select Order Type</h2>
                 </div>
-                {(['WEEKLY_FOOD', 'BAR', 'IBG'] as OrderType[]).map((t) => (
+                {(['WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as OrderType[]).map((t) => (
                   <button
                     key={t}
                     onClick={() => { setShowTypePickerFor(false); onCreateOrder(t); }}
@@ -591,10 +635,10 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                     <div className="flex-1">
                       <p className="font-black text-slate-800 text-sm">{ORDER_TYPE_LABELS[t]}</p>
                       <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-0.5">
-                        {t === 'WEEKLY_FOOD' ? 'Food & produce orders' : t === 'BAR' ? 'Bar & beverage orders' : 'IBG direct orders'}
+                        {t === 'WEEKLY_FOOD' ? 'Food & produce orders' : t === 'BAR' ? 'Bar & beverage orders' : t === 'IBG Products' ? 'IBG direct orders' : 'IBG glassware & crockery orders'}
                       </p>
                     </div>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300"><path d="m9 18 6-6-6-6"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300"><path d="m9 18 6-6-6-6" /></svg>
                   </button>
                 ))}
                 <button onClick={() => setShowTypePickerFor(false)} className="w-full py-3 text-slate-500 text-sm font-bold">Cancel</button>
@@ -607,7 +651,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
               <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 mb-4 flex items-center justify-between gap-2">
                 <p className="text-rose-700 font-semibold text-xs">{deleteOrderError}</p>
                 <button onClick={() => setDeleteOrderError(null)} className="text-rose-400 hover:text-rose-600">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               </div>
             )}
@@ -628,7 +672,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
             ) : filteredOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
                 <div className="w-16 h-16 bg-ibg-50 rounded-2xl flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#952D34" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#952D34" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 12h6" /><path d="M9 16h4" /></svg>
                 </div>
                 <div>
                   <p className="text-slate-800 font-bold text-base">
@@ -680,40 +724,54 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                         )}
                         <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium uppercase tracking-wider pt-2 border-t border-slate-50">
                           <span>Created {formatDate(order.created_at)}</span>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300"><path d="m9 18 6-6-6-6"/></svg>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300"><path d="m9 18 6-6-6-6" /></svg>
                         </div>
                       </button>
 
-                      {user.role === 'Owner' && (
-                        <div className="border-t border-slate-50 px-4 py-2 flex justify-end">
-                          {confirmDeleteOrderId === orderId ? (
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] text-slate-500 font-semibold">Delete this order?</span>
-                              <button
-                                onClick={() => handleDeleteOrder(orderId)}
-                                disabled={deletingOrderId === orderId}
-                                className="text-[11px] font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 disabled:opacity-40 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
-                              >
-                                {deletingOrderId === orderId ? 'Deleting...' : 'Yes, delete'}
-                              </button>
-                              <button
-                                onClick={() => setConfirmDeleteOrderId(null)}
-                                className="text-[11px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
+                      <div className="border-t border-slate-50 px-4 py-2 flex justify-between gap-3 min-h-[44px]">
+                        {confirmDeleteOrderId === orderId && user.role === 'Owner' ? (
+                          <div className="flex items-center gap-2 justify-end w-full">
+                            <span className="text-[11px] text-slate-500 font-semibold">Delete this order?</span>
                             <button
-                              onClick={() => setConfirmDeleteOrderId(orderId)}
-                              className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteOrder(orderId); }}
+                              disabled={deletingOrderId === orderId}
+                              className="text-[11px] font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 disabled:opacity-40 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                              Delete
+                              {deletingOrderId === orderId ? 'Deleting...' : 'Yes, delete'}
                             </button>
-                          )}
-                        </div>
-                      )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteOrderId(null); }}
+                              className="text-[11px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center w-full justify-end gap-4">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDuplicateOrder(order);
+                              }}
+                              disabled={duplicatingOrderId === orderId}
+                              className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-ibg-600 hover:bg-ibg-50 px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                              {duplicatingOrderId === orderId ? 'Copying...' : 'Duplicate'}
+                            </button>
+
+                            {user.role === 'Owner' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteOrderId(orderId); }}
+                                className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -733,7 +791,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Search</label>
                 <div className="relative">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                   <input
                     type="text"
                     placeholder="Product name..."
@@ -743,7 +801,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                   />
                   {prodSearch && (
                     <button onClick={() => setProdSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                     </button>
                   )}
                 </div>
@@ -753,15 +811,14 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Order Type</label>
                 <div className="flex flex-wrap gap-1.5">
-                  {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG'] as OrderTypeFilter[]).map((t) => (
+                  {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as OrderTypeFilter[]).map((t) => (
                     <button
                       key={t}
                       onClick={() => { setProdTypeFilter(t); setProdCategoryFilter('ALL'); setProdVendorFilter('ALL'); }}
-                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-colors ${
-                        prodTypeFilter === t
-                          ? 'bg-ibg-600 text-white border-ibg-600'
-                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                      }`}
+                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-colors ${prodTypeFilter === t
+                        ? 'bg-ibg-600 text-white border-ibg-600'
+                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                        }`}
                     >
                       {t === 'ALL' ? 'All' : `${ORDER_TYPE_ICONS[t]} ${ORDER_TYPE_LABELS[t as OrderType]}`}
                     </button>
@@ -798,11 +855,10 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       onClick={() => setProdCategoryFilter('ALL')}
-                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-colors ${
-                        prodCategoryFilter === 'ALL'
-                          ? 'bg-slate-700 text-white border-slate-700'
-                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                      }`}
+                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-colors ${prodCategoryFilter === 'ALL'
+                        ? 'bg-slate-700 text-white border-slate-700'
+                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                        }`}
                     >
                       All
                     </button>
@@ -810,11 +866,10 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                       <button
                         key={c.id}
                         onClick={() => setProdCategoryFilter(c.id)}
-                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-colors ${
-                          prodCategoryFilter === c.id
-                            ? 'bg-slate-700 text-white border-slate-700'
-                            : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                        }`}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-colors ${prodCategoryFilter === c.id
+                          ? 'bg-slate-700 text-white border-slate-700'
+                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                          }`}
                       >
                         {c.name}
                       </button>
@@ -938,6 +993,18 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                       className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
                     />
                   </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Min Order</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="Optional"
+                      value={addForm.min_order}
+                      onChange={(e) => setAddForm((f) => ({ ...f, min_order: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
+                    />
+                  </div>
                   <div className="sm:col-span-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Notes (optional)</label>
                     <input
@@ -989,12 +1056,12 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
               </div>
             ) : (
               <div className="space-y-6">
-                {(['WEEKLY_FOOD', 'BAR', 'IBG'] as OrderType[])
+                {(['WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as OrderType[])
                   .filter((ot) => groupedProducts[ot]?.length)
                   .map((ot) => {
                     const headerCls = ORDER_TYPE_HEADER_COLORS[ot];
                     const badgeCls = ORDER_TYPE_BADGE_COLORS[ot];
-                    const typeLabel = { WEEKLY_FOOD: 'Weekly Food', BAR: 'Bar & Front of House', IBG: 'IBG Order' }[ot];
+                    const typeLabel = { WEEKLY_FOOD: 'Weekly Food', BAR: 'Bar & Front of House', 'IBG Products': 'IBG Order', 'IBG Crockery': 'IBG Crockery' }[ot];
 
                     return (
                       <div key={ot} className="rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -1019,7 +1086,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                                 title="Select all visible"
                                 className="flex items-center justify-center text-amber-500 hover:text-amber-700 transition-colors"
                               >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
                               </button>
                             )}
                             <span>Product</span>
@@ -1085,6 +1152,18 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                                               className="w-full border border-slate-200 rounded-xl px-2 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
                                             />
                                           </div>
+                                          <div>
+                                            <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Min Order</label>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="any"
+                                              value={editForm.min_order}
+                                              onChange={(e) => setEditForm((f) => ({ ...f, min_order: e.target.value }))}
+                                              placeholder="Optional"
+                                              className="w-full border border-slate-200 rounded-xl px-2 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
+                                            />
+                                          </div>
                                         </div>
                                         <div className="mb-3">
                                           <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Notes</label>
@@ -1137,15 +1216,15 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                                           </div>
                                           <div className="flex items-center gap-1 shrink-0">
                                             <button onClick={() => startEdit(p)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors" title="Edit">
-                                              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                             </button>
                                             {p.is_active ? (
                                               <button onClick={() => handleDelete(p.id)} disabled={deletingId === p.id} className="p-2 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors disabled:opacity-40" title="Deactivate">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                                               </button>
                                             ) : (
                                               <button onClick={() => handleReactivate(p.id)} disabled={deletingId === p.id} className="p-2 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors disabled:opacity-40" title="Reactivate">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
                                               </button>
                                             )}
                                           </div>
@@ -1197,57 +1276,57 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                                           </div>
                                         ) : (
                                           <div className={`hidden lg:grid gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors ${bulkEditMode ? 'lg:grid-cols-[28px,1fr,160px,160px,80px,100px]' : 'lg:grid-cols-[1fr,160px,160px,80px,100px]'}`}>
-                                          {bulkEditMode && (
-                                            <div className="flex items-center justify-center">
-                                              <input
-                                                type="checkbox"
-                                                checked={bulkSelected.has(p.id)}
-                                                onChange={() => toggleBulkSelect(p)}
-                                                className="w-4 h-4 accent-amber-500 cursor-pointer"
-                                              />
-                                            </div>
-                                          )}
-                                          <div className="min-w-0">
-                                            <p className="font-semibold text-sm text-slate-800 truncate">{p.name}</p>
-                                            {p.notes && <p className="text-[11px] text-slate-400 truncate">{p.notes}</p>}
-                                            {!p.is_active && (
-                                              <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">Inactive</span>
-                                            )}
-                                          </div>
-                                          <div className="truncate">
-                                            <span className="text-xs font-semibold text-slate-600">{p.vendors?.name ?? '—'}</span>
-                                          </div>
-                                          <div className="truncate">
-                                            <span className="text-xs text-slate-500">{catGroup.catName}</span>
-                                          </div>
-                                          <div>
-                                            <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">{p.unit}</span>
-                                          </div>
-                                          <div className="flex items-center gap-1 justify-end">
-                                            {!bulkEditMode && (
-                                              <button onClick={() => startEdit(p)} className="p-1.5 rounded-lg hover:bg-ibg-50 text-slate-400 hover:text-ibg-600 transition-colors" title="Edit">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                              </button>
-                                            )}
-                                            {p.is_active ? (
-                                              <button onClick={() => handleDelete(p.id)} disabled={deletingId === p.id} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors disabled:opacity-40" title="Deactivate">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                                              </button>
-                                            ) : (
-                                              <button onClick={() => handleReactivate(p.id)} disabled={deletingId === p.id} className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors disabled:opacity-40" title="Reactivate">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-                                              </button>
-                                            )}
                                             {bulkEditMode && (
-                                              <button
-                                                onClick={() => toggleBulkSelect(p)}
-                                                className="text-[10px] font-bold text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-lg transition-colors"
-                                              >
-                                                Select
-                                              </button>
+                                              <div className="flex items-center justify-center">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={bulkSelected.has(p.id)}
+                                                  onChange={() => toggleBulkSelect(p)}
+                                                  className="w-4 h-4 accent-amber-500 cursor-pointer"
+                                                />
+                                              </div>
                                             )}
+                                            <div className="min-w-0">
+                                              <p className="font-semibold text-sm text-slate-800 truncate">{p.name}</p>
+                                              {p.notes && <p className="text-[11px] text-slate-400 truncate">{p.notes}</p>}
+                                              {!p.is_active && (
+                                                <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">Inactive</span>
+                                              )}
+                                            </div>
+                                            <div className="truncate">
+                                              <span className="text-xs font-semibold text-slate-600">{p.vendors?.name ?? '—'}</span>
+                                            </div>
+                                            <div className="truncate">
+                                              <span className="text-xs text-slate-500">{catGroup.catName}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">{p.unit}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1 justify-end">
+                                              {!bulkEditMode && (
+                                                <button onClick={() => startEdit(p)} className="p-1.5 rounded-lg hover:bg-ibg-50 text-slate-400 hover:text-ibg-600 transition-colors" title="Edit">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                                </button>
+                                              )}
+                                              {p.is_active ? (
+                                                <button onClick={() => handleDelete(p.id)} disabled={deletingId === p.id} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors disabled:opacity-40" title="Deactivate">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                                </button>
+                                              ) : (
+                                                <button onClick={() => handleReactivate(p.id)} disabled={deletingId === p.id} className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors disabled:opacity-40" title="Reactivate">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
+                                                </button>
+                                              )}
+                                              {bulkEditMode && (
+                                                <button
+                                                  onClick={() => toggleBulkSelect(p)}
+                                                  className="text-[10px] font-bold text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-lg transition-colors"
+                                                >
+                                                  Select
+                                                </button>
+                                              )}
+                                            </div>
                                           </div>
-                                        </div>
                                         )}
                                       </>
                                     )}

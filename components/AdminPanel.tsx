@@ -34,11 +34,44 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
+  const [formInventory, setFormInventory] = useState(true);
+  const [formCash, setFormCash] = useState(true);
+  const [formUsers, setFormUsers] = useState(true);
+  const [formCatering, setFormCatering] = useState(true);
+  const [formReceipts, setFormReceipts] = useState(true);
+
   // Edit restaurant
   const [editingRestaurant, setEditingRestaurant] = useState<Restaurant | null>(null);
   const [editName, setEditName] = useState('');
   const [editLocation, setEditLocation] = useState('');
   const [editAdminEmail, setEditAdminEmail] = useState('');
+  const [editInventory, setEditInventory] = useState(true);
+  const [editCash, setEditCash] = useState(true);
+  const [editUsers, setEditUsers] = useState(true);
+  const [editCatering, setEditCatering] = useState(true);
+  const [editReceipts, setEditReceipts] = useState(true);
+
+  // Auto-seed default restaurant if none exist
+  useEffect(() => {
+    if (restaurants.length === 0) {
+      (async () => {
+        try {
+          const existing = await dataService.getRestaurants();
+          if (existing.length === 0) {
+            const seed = await dataService.createRestaurant({
+              name: "Inchin's Bamboo Garden",
+              location: 'South Charlotte',
+              admin_email: 'sri7576@gmail.com',
+              is_active: true,
+            });
+            onRestaurantCreated(seed);
+          }
+        } catch (e) {
+          console.error('Auto-seed failed:', e);
+        }
+      })();
+    }
+  }, []);
 
   useEffect(() => {
     if (tab === 'requests') loadRequests();
@@ -72,11 +105,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         location: formLocation.trim() || undefined,
         admin_email: formAdminEmail.trim(),
         is_active: true,
+        enable_inventory: formInventory,
+        enable_cash: formCash,
+        enable_users: formUsers,
+        enable_catering: formCatering,
+        enable_receipts: formReceipts,
       });
       onRestaurantCreated(newR);
       setFormName('');
       setFormLocation('');
       setFormAdminEmail('');
+      setFormInventory(true);
+      setFormCash(true);
+      setFormUsers(true);
+      setFormCatering(true);
+      setFormReceipts(true);
       setShowCreateForm(false);
     } catch (e: unknown) {
       setFormError(e instanceof Error ? e.message : 'Failed to create restaurant.');
@@ -96,6 +139,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     setEditName(r.name);
     setEditLocation(r.location ?? '');
     setEditAdminEmail(r.admin_email);
+    setEditInventory(r.enable_inventory !== false);
+    setEditCash(r.enable_cash !== false);
+    setEditUsers(r.enable_users !== false);
+    setEditCatering(r.enable_catering !== false);
+    setEditReceipts(r.enable_receipts !== false);
   };
 
   const handleSaveEdit = async () => {
@@ -107,6 +155,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         name: editName.trim(),
         location: editLocation.trim() || undefined,
         admin_email: editAdminEmail.trim(),
+        enable_inventory: editInventory,
+        enable_cash: editCash,
+        enable_users: editUsers,
+        enable_catering: editCatering,
+        enable_receipts: editReceipts,
       };
       await dataService.updateRestaurant(updated);
       onRestaurantUpdated(updated);
@@ -165,7 +218,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           onClick={onBack}
           className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-white"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
         </button>
         <div className="flex-1">
           <h1 className="text-white font-black text-base tracking-tight">Admin Panel</h1>
@@ -185,9 +238,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-colors relative ${
-              tab === key ? 'text-ibg-600' : 'text-slate-400 hover:text-slate-600'
-            }`}
+            className={`flex-1 py-3 text-xs font-black uppercase tracking-widest transition-colors relative ${tab === key ? 'text-ibg-600' : 'text-slate-400 hover:text-slate-600'
+              }`}
           >
             {label}
             {key === 'requests' && pendingCount > 0 && (
@@ -212,7 +264,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   onClick={() => setShowCreateForm(true)}
                   className="flex items-center gap-1.5 bg-ibg-600 text-white text-xs font-black uppercase tracking-widest px-4 py-2 rounded-xl hover:bg-ibg-700 transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
                   New Restaurant
                 </button>
               )}
@@ -235,7 +287,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 block">Location</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 block">Subtitle</label>
                   <input
                     value={formLocation}
                     onChange={e => setFormLocation(e.target.value)}
@@ -253,6 +305,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
                   />
                 </div>
+
+                <div className="pt-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 block">Enabled Modules</label>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={formInventory} onChange={e => setFormInventory(e.target.checked)} /> Inventory</label>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={formCash} onChange={e => setFormCash(e.target.checked)} /> Cash</label>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={formUsers} onChange={e => setFormUsers(e.target.checked)} /> Users</label>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={formCatering} onChange={e => setFormCatering(e.target.checked)} /> Catering</label>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={formReceipts} onChange={e => setFormReceipts(e.target.checked)} /> Receipts</label>
+                  </div>
+                </div>
+
                 {formError && <p className="text-xs text-rose-500 font-medium">{formError}</p>}
                 <div className="flex gap-2 pt-1">
                   <button
@@ -275,7 +339,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             {/* Restaurant list */}
             {restaurants.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
-                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-3 opacity-40"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-3 opacity-40"><path d="M3 11l19-9-9 19-2-8-8-2z" /></svg>
                 <p className="text-sm font-bold">No restaurants yet</p>
                 <p className="text-xs">Create your first restaurant above</p>
               </div>
@@ -285,9 +349,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   <div key={r.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     {editingRestaurant?.id === r.id ? (
                       <div className="p-4 space-y-3">
-                        <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-ibg-400" placeholder="Name" />
-                        <input value={editLocation} onChange={e => setEditLocation(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-ibg-400" placeholder="Location" />
-                        <input value={editAdminEmail} onChange={e => setEditAdminEmail(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-ibg-400" placeholder="Admin email" />
+                        <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-ibg-400" placeholder="Name" />
+                        <input type="text" value={editLocation} onChange={e => setEditLocation(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-ibg-400" placeholder="Location" />
+                        <input type="email" value={editAdminEmail} onChange={e => setEditAdminEmail(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-ibg-400" placeholder="Admin email" />
+                        <div className="flex flex-wrap gap-x-3 gap-y-2 pt-1 pb-1">
+                          <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={editInventory} onChange={e => setEditInventory(e.target.checked)} /> Inventory</label>
+                          <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={editCash} onChange={e => setEditCash(e.target.checked)} /> Cash</label>
+                          <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={editUsers} onChange={e => setEditUsers(e.target.checked)} /> Users</label>
+                          <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={editCatering} onChange={e => setEditCatering(e.target.checked)} /> Catering</label>
+                          <label className="flex items-center gap-1.5 text-xs text-slate-600 font-bold"><input type="checkbox" checked={editReceipts} onChange={e => setEditReceipts(e.target.checked)} /> Receipts</label>
+                        </div>
                         <div className="flex gap-2">
                           <button onClick={handleSaveEdit} disabled={saving} className="flex-1 bg-ibg-600 text-white text-xs font-black uppercase py-2 rounded-xl hover:bg-ibg-700 disabled:opacity-50 transition-colors">Save</button>
                           <button onClick={() => setEditingRestaurant(null)} className="flex-1 bg-slate-100 text-slate-600 text-xs font-black uppercase py-2 rounded-xl hover:bg-slate-200 transition-colors">Cancel</button>
@@ -300,7 +371,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className={`font-black text-sm ${r.is_active ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{r.name}</p>
-                          {r.location && <p className="text-xs text-slate-500 font-medium">{r.location}</p>}
+                          {r.location && <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#14b8a6' }}>{r.location}</p>}
                           <p className="text-[10px] text-slate-400 font-medium">{r.admin_email}</p>
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -308,15 +379,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             onClick={() => startEdit(r)}
                             className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-ibg-50 text-slate-500 hover:text-ibg-600 transition-colors"
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
                           </button>
                           <button
                             onClick={() => handleToggleRestaurant(r)}
                             className={`w-8 h-8 flex items-center justify-center rounded-xl transition-colors ${r.is_active ? 'bg-rose-50 hover:bg-rose-100 text-rose-500' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600'}`}
                           >
                             {r.is_active
-                              ? <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                              : <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                              ? <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                              : <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
                             }
                           </button>
                         </div>
@@ -351,7 +422,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             ) : accessRequests.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
-                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-3 opacity-40"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.15 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.06 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 16.92z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-3 opacity-40"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.15 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.06 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 16.92z" /></svg>
                 <p className="text-sm font-bold">No requests</p>
                 <p className="text-xs">Access requests from new users will appear here</p>
               </div>
@@ -369,11 +440,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         <p className="text-xs text-ibg-600 font-bold mt-0.5">→ {getRestaurantName(req.restaurant_id)}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5">{new Date(req.requested_at).toLocaleString()}</p>
                       </div>
-                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap ${
-                        req.status === 'pending' ? 'bg-amber-100 text-amber-700'
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap ${req.status === 'pending' ? 'bg-amber-100 text-amber-700'
                         : req.status === 'approved' ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-rose-100 text-rose-700'
-                      }`}>
+                          : 'bg-rose-100 text-rose-700'
+                        }`}>
                         {req.status}
                       </span>
                     </div>
