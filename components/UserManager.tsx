@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { User } from '../types';
+import { getActiveRestaurantId } from '../services/supabaseClient';
 
 interface UserManagerProps {
   users: User[];
@@ -23,7 +24,7 @@ const UserManager: React.FC<UserManagerProps> = ({ users, onEditUser, onDeleteUs
     <div className="flex flex-col h-full w-full max-w-xl mx-auto p-4 sm:p-6 pb-24 animate-slideInRight">
       <header className="flex justify-between items-center mb-8">
         <button onClick={onBack} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
         </button>
         <h1 className="text-lg font-bold text-slate-900">User Manager</h1>
         <div className="w-10" />
@@ -31,7 +32,7 @@ const UserManager: React.FC<UserManagerProps> = ({ users, onEditUser, onDeleteUs
 
       <div className="bg-violet-50 border border-violet-100 rounded-2xl p-4 flex items-center gap-3 mb-6">
         <div className="w-8 h-8 rounded-full bg-violet-500 flex items-center justify-center text-white">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
         </div>
         <div className="flex-1">
           <p className="text-violet-800 text-xs font-bold">Staff Registry</p>
@@ -51,9 +52,16 @@ const UserManager: React.FC<UserManagerProps> = ({ users, onEditUser, onDeleteUs
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <h3 className="font-bold text-slate-800 text-sm truncate">{user.name}</h3>
-                <span className={`shrink-0 text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded-full ${ROLE_COLORS[user.role] ?? 'bg-slate-100 text-slate-600'}`}>
-                  {user.role}
-                </span>
+                {(() => {
+                  const currentRestaurantId = getActiveRestaurantId();
+                  const access = user.access?.find(a => a.restaurant_id === currentRestaurantId);
+                  const role = access?.role || user.role || 'User';
+                  return (
+                    <span className={`shrink-0 text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded-full ${ROLE_COLORS[role] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {role}
+                    </span>
+                  );
+                })()}
               </div>
               <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
               {user.status === 'Inactive' && (
@@ -66,7 +74,7 @@ const UserManager: React.FC<UserManagerProps> = ({ users, onEditUser, onDeleteUs
                 className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
                 title="Edit role"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
               </button>
               <button
                 onClick={() => {
@@ -75,7 +83,7 @@ const UserManager: React.FC<UserManagerProps> = ({ users, onEditUser, onDeleteUs
                 className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
                 title="Remove user"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
               </button>
             </div>
           </div>

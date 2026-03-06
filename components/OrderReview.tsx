@@ -9,6 +9,8 @@ import {
   deleteOrder,
   createOrder,
   createOrderLines,
+  updateOrderLineShopping,
+  completeOrderShopping,
 } from '../services/inventoryService';
 import CreateOrderForm from './CreateOrderForm';
 
@@ -20,6 +22,7 @@ interface Props {
   onDeleted: () => void;
   onDuplicated: (newOrder: Order) => void;
   initialShowAddItems?: boolean;
+  initialShowShopping?: boolean;
 }
 
 // ── Canvas helpers ────────────────────────────────────────────────────────────
@@ -156,11 +159,12 @@ const STATUS_COLORS: Record<string, string> = {
   SUBMITTED: 'bg-amber-100 text-amber-700',
   APPROVED: 'bg-emerald-100 text-emerald-700',
   SENT: 'bg-blue-100 text-blue-700',
+  COMPLETED: 'bg-teal-100 text-teal-700',
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDeleted, onDuplicated, initialShowAddItems }) => {
+const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDeleted, onDuplicated, initialShowAddItems, initialShowShopping }) => {
   const [lines, setLines] = useState<OrderLineDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -171,6 +175,8 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [showDuplicateConfirm, setShowDuplicateConfirm] = useState(false);
+  const [shoppingMode, setShoppingMode] = useState(initialShowShopping || false);
+  const [activeShoppingLineId, setActiveShoppingLineId] = useState<number | null>(null);
 
   // Per-line local edits { qty, unit } — applied on submit
   const [lineEdits, setLineEdits] = useState<Map<number, { qty: string; unit: string }>>(new Map());
@@ -305,6 +311,29 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
     }
   };
 
+  // ── Shopping ───────────
+
+  const handleUpdateShoppingStatus = async (lineId: number, status: 'FOUND' | 'NOT_FOUND' | 'ALTERNATIVE', notes?: string) => {
+    try {
+      await updateOrderLineShopping(lineId, status, notes);
+      setLines(prev => prev.map(l => l.id === lineId ? { ...l, shopping_status: status, notes: notes ?? l.notes } : l));
+      setActiveShoppingLineId(null);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to update status');
+    }
+  };
+
+  const handleFinishShopping = async () => {
+    setLoading(true);
+    try {
+      await completeOrderShopping(order.id, lines);
+      onSubmitted();
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to complete shopping');
+      setLoading(false);
+    }
+  };
+
   // ── Duplicate order ───────────────────────────────────────────────────────
 
   const handleDuplicate = async () => {
@@ -359,6 +388,157 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
         onItemsAdded={() => { setShowAddItems(false); loadLines(); }}
         onSubmit={() => { }}
       />
+    );
+  }
+
+  if (shoppingMode) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-900 animate-fadeIn">
+        <header className="flex items-center gap-3 px-4 py-3 bg-slate-800 sticky top-0 z-10 border-b border-slate-700 shadow-xl">
+          <button onClick={() => setShoppingMode(false)} className="p-2 rounded-xl bg-slate-700 text-slate-300 hover:text-white transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+          </button>
+          <div className="flex-1">
+            <p className="text-teal-400 text-[10px] font-black uppercase tracking-[0.2em] leading-none mb-1">Store Shopping</p>
+            <h1 className="text-white font-black text-lg leading-none">Order #{order.id}</h1>
+          </div>
+          <div className="shrink-0 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-xl">
+            <p className="text-teal-400 font-black text-xs leading-none">
+              {lines.filter(l => l.shopping_status === 'FOUND').length}/{lines.length}
+            </p>
+            <p className="text-teal-400/50 text-[8px] font-bold uppercase tracking-wider text-center mt-0.5">Found</p>
+          </div>
+        </header>
+
+        <div className="flex-1 p-4 space-y-4 pb-20 overflow-y-auto">
+          {vendorGroups.map(([vendor, vLines]) => (
+            <div key={vendor} className="space-y-2">
+              <h2 className="text-slate-500 font-black text-[10px] uppercase tracking-[0.2em] px-1">{vendor}</h2>
+              <div className="space-y-2">
+                {vLines.map(line => {
+                  const isFound = line.shopping_status === 'FOUND';
+                  const isMissing = line.shopping_status === 'NOT_FOUND';
+                  const isAlt = line.shopping_status === 'ALTERNATIVE';
+
+                  return (
+                    <div
+                      key={line.id}
+                      className={`rounded-2xl border transition-all duration-300 bg-slate-800 shadow-sm ${isFound ? 'border-emerald-500/30 opacity-60' :
+                        isMissing ? 'border-rose-500/30 opacity-60' :
+                          isAlt ? 'border-amber-500/50 ring-2 ring-amber-500/10' :
+                            'border-slate-700'
+                        }`}
+                    >
+                      <div className="p-3">
+                        <div className="flex items-center gap-3">
+                          {/* Left: Qty Badge */}
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border transition-colors ${isFound ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' :
+                            isMissing ? 'bg-rose-500/10 border-rose-500/50 text-rose-400' :
+                              isAlt ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' :
+                                'bg-slate-700 border-slate-600 text-slate-100'
+                            }`}>
+                            <span className="font-black text-[10px]">{line.qty_ordered}</span>
+                          </div>
+
+                          {/* Middle: Name & Info */}
+                          <div className="flex-1 min-w-0">
+                            <h3 className={`font-bold text-xs leading-tight truncate ${isFound ? 'text-slate-400 line-through' : 'text-white'}`}>
+                              {line.product_name}
+                            </h3>
+                            <p className="text-slate-500 text-[9px] font-bold uppercase tracking-wider">
+                              {line.qty_ordered} {line.unit} · {line.category_name}
+                            </p>
+                          </div>
+
+                          {/* Right: Inline Actions */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Missing Button */}
+                            <button
+                              onClick={() => handleUpdateShoppingStatus(line.id, isMissing ? null as any : 'NOT_FOUND')}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isMissing ? 'bg-rose-500 text-white' : 'bg-slate-700 text-slate-400 hover:text-rose-400'
+                                }`}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                            </button>
+
+                            {/* Alternative Button */}
+                            <button
+                              onClick={() => {
+                                if (isAlt) setActiveShoppingLineId(activeShoppingLineId === line.id ? null : line.id);
+                                else {
+                                  handleUpdateShoppingStatus(line.id, 'ALTERNATIVE');
+                                  setActiveShoppingLineId(line.id);
+                                }
+                              }}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isAlt ? 'bg-amber-500 text-black' : 'bg-slate-700 text-slate-400 hover:text-amber-400'
+                                }`}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m16 11 4 4-4 4" /><path d="M8 5v14" /><path d="M20 15H8a4 4 0 0 1-4-4V5" /></svg>
+                            </button>
+
+                            {/* Found Checkbox (Prominent next to item content) */}
+                            <button
+                              onClick={() => handleUpdateShoppingStatus(line.id, isFound ? null as any : 'FOUND')}
+                              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all border-2 ${isFound
+                                ? 'bg-emerald-500 border-emerald-400 text-white'
+                                : 'bg-slate-700 border-slate-600 text-slate-400 hover:border-emerald-500'
+                                }`}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Alternative Note Input */}
+                        {(isAlt || activeShoppingLineId === line.id) && (
+                          <div className="mt-3 pt-3 border-t border-slate-700 animate-slideIn">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                defaultValue={line.notes || ''}
+                                placeholder="Edit alt note..."
+                                className="flex-1 bg-slate-900 border border-slate-600 rounded-xl px-3 py-2 text-white text-[11px] font-medium focus:outline-none"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleUpdateShoppingStatus(line.id, 'ALTERNATIVE', (e.target as HTMLInputElement).value);
+                                    setActiveShoppingLineId(null);
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  if (e.target.value !== line.notes) {
+                                    handleUpdateShoppingStatus(line.id, 'ALTERNATIVE', e.target.value);
+                                  }
+                                }}
+                              />
+                              <button
+                                onClick={() => setActiveShoppingLineId(null)}
+                                className="bg-amber-500 text-black px-3 rounded-lg font-black text-[9px] uppercase tracking-widest"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-slate-900 border-t border-slate-800 shadow-2xl flex items-center justify-between">
+          <p className="text-slate-500 text-[10px] font-bold">Shopping in progress...</p>
+          <button
+            onClick={handleFinishShopping}
+            disabled={loading}
+            className="bg-white text-black px-6 py-2.5 rounded-full font-black text-[11px] uppercase tracking-widest shadow-lg shadow-white/5 active:scale-95 transition-all disabled:opacity-50"
+          >
+            {loading ? 'Completing...' : 'Finish Shopping'}
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -472,16 +652,37 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
                 {vLines.map((line) => (
                   <div key={line.id} className="px-4 py-3 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-slate-800 leading-tight">{line.product_name}</p>
-                      {line.category_name && (
-                        <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 mt-1 inline-block ${(order.order_type ?? 'WEEKLY_FOOD') === 'BAR' ? 'text-purple-700 bg-purple-50' :
-                          (order.order_type ?? 'WEEKLY_FOOD') === 'IBG Products' ? 'text-indigo-700 bg-indigo-50' :
-                            (order.order_type ?? 'WEEKLY_FOOD') === 'IBG Crockery' ? 'text-rose-700 bg-rose-50' :
-                              'text-teal-700 bg-teal-50'
+                      <div className="flex items-center gap-2">
+                        <p className={`text-sm font-bold leading-tight ${line.shopping_status === 'FOUND' || line.shopping_status === 'ALTERNATIVE'
+                            ? 'text-slate-400 line-through'
+                            : 'text-slate-800'
                           }`}>
-                          {line.category_name}
-                        </span>
-                      )}
+                          {line.product_name}
+                        </p>
+                        {line.shopping_status === 'FOUND' && (
+                          <span className="bg-emerald-100 text-emerald-700 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">Purchased</span>
+                        )}
+                        {line.shopping_status === 'ALTERNATIVE' && (
+                          <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">Purchased (Alt)</span>
+                        )}
+                        {line.shopping_status === 'NOT_FOUND' && (
+                          <span className="bg-rose-100 text-rose-700 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">Pending</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        {line.category_name && (
+                          <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 inline-block ${(order.order_type ?? 'WEEKLY_FOOD') === 'BAR' ? 'text-purple-700 bg-purple-50' :
+                            (order.order_type ?? 'WEEKLY_FOOD') === 'IBG Products' ? 'text-indigo-700 bg-indigo-50' :
+                              (order.order_type ?? 'WEEKLY_FOOD') === 'IBG Crockery' ? 'text-rose-700 bg-rose-50' :
+                                'text-teal-700 bg-teal-50'
+                            }`}>
+                            {line.category_name}
+                          </span>
+                        )}
+                        {line.notes && line.shopping_status === 'ALTERNATIVE' && (
+                          <span className="text-[10px] text-amber-600 font-medium italic">"{line.notes}"</span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Edit controls — always visible */}
@@ -609,6 +810,13 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
                     Share Order
                   </>
                 )}
+              </button>
+              <button
+                onClick={() => setShoppingMode(true)}
+                className="flex-1 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-black active:scale-[0.98] shadow-md shadow-slate-200 transition-all flex items-center justify-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" /></svg>
+                Shopping
               </button>
               <button
                 onClick={submitted ? onSubmitted : onBack}

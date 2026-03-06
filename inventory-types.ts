@@ -53,7 +53,7 @@ export interface Product {
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 
-export type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'SENT';
+export type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'SENT' | 'COMPLETED';
 export type OrderType = 'WEEKLY_FOOD' | 'BAR' | 'IBG Products' | 'IBG Crockery';
 
 export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
@@ -95,6 +95,7 @@ export interface OrderLine {
   notes?: string;                   // staff notes
   qty_adjusted?: number;            // manager-approved override qty
   qty_shipped?: number;
+  shopping_status?: 'FOUND' | 'NOT_FOUND' | 'ALTERNATIVE';
   created_at: string;
 
   // Joined for display
@@ -109,6 +110,7 @@ export interface OrderLineDetail {
   qty_ordered: number;
   unit?: string;
   notes?: string;
+  shopping_status?: 'FOUND' | 'NOT_FOUND' | 'ALTERNATIVE';
   created_at: string;
   product_name: string;
   vendor_name?: string;

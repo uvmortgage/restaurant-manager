@@ -177,9 +177,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       // Find user by email and assign restaurant
       const user = await dataService.getUserByEmail(req.user_email);
       if (user) {
-        await dataService.assignUserToRestaurant(user.id, req.restaurant_id);
+        await dataService.assignUserToRestaurant(user.id, req.restaurant_id, 'User');
         // Also activate the user
-        await dataService.updateUser({ ...user, status: 'Active', restaurant_id: req.restaurant_id });
+        await dataService.updateUser({ ...user, status: 'Active' });
       }
       setAccessRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' } : r));
     } catch (e: unknown) {
@@ -196,12 +196,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const handleAssignUserRestaurant = async (user: User, restaurantId: string) => {
+  const handleAssignUserRestaurant = async (user: User, restaurantId: string, role: string = 'User') => {
     try {
-      await dataService.assignUserToRestaurant(user.id, restaurantId || null);
-      setAllUsers(prev => prev.map(u => u.id === user.id ? { ...u, restaurant_id: restaurantId || undefined } : u));
+      await dataService.assignUserToRestaurant(user.id, restaurantId, role);
+      loadUsers(); // Refresh to get the new access data
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to assign restaurant');
+    }
+  };
+
+  const handleRemoveUserAccess = async (user: User, restaurantId: string) => {
+    try {
+      await dataService.removeUserFromRestaurant(user.id, restaurantId);
+      loadUsers();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to remove access');
     }
   };
 
@@ -501,21 +510,54 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                       <div className="flex-1 min-w-0">
                         <p className="font-black text-sm text-slate-800">{u.name}</p>
                         <p className="text-xs text-slate-500 truncate">{u.email}</p>
-                        <p className="text-[10px] text-slate-400">{u.role} · {u.status}</p>
+                        <p className="text-[10px] text-slate-400">{u.status}</p>
                       </div>
                     </div>
-                    <div className="mt-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 block">Assign Restaurant</label>
-                      <select
-                        value={u.restaurant_id ?? ''}
-                        onChange={e => handleAssignUserRestaurant(u, e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
-                      >
-                        <option value="">— No restaurant —</option>
-                        {restaurants.map(r => (
-                          <option key={r.id} value={r.id}>{r.name}{r.location ? ` · ${r.location}` : ''}</option>
-                        ))}
-                      </select>
+
+                    <div className="mt-4 space-y-3">
+                      {/* Existing Access */}
+                      {u.access && u.access.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Current Access</p>
+                          {u.access.map(acc => (
+                            <div key={acc.restaurant_id} className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                              <span className="flex-1 text-xs font-bold text-slate-700 truncate">{getRestaurantName(acc.restaurant_id)}</span>
+                              <select
+                                value={acc.role}
+                                onChange={e => handleAssignUserRestaurant(u, acc.restaurant_id, e.target.value)}
+                                className="text-[10px] font-black uppercase bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none"
+                              >
+                                {['Owner', 'Manager', 'Front Staff', 'Food Runner', 'Dish Washer', 'User'].map(r => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => handleRemoveUserAccess(u, acc.restaurant_id)}
+                                className="text-rose-500 p-1 hover:bg-rose-50 rounded-md transition-colors"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add New Access */}
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 block">Add Restaurant Access</label>
+                        <select
+                          value=""
+                          onChange={e => handleAssignUserRestaurant(u, e.target.value, 'User')}
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
+                        >
+                          <option value="">— Select restaurant to add —</option>
+                          {restaurants
+                            .filter(r => !u.access?.some(acc => acc.restaurant_id === r.id))
+                            .map(r => (
+                              <option key={r.id} value={r.id}>{r.name}{r.location ? ` · ${r.location}` : ''}</option>
+                            ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
                 ))}

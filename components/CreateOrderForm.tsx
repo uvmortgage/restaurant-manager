@@ -8,8 +8,11 @@ import {
   createOrderLines,
   updateProductVendor,
   fetchLastOrderedByType,
+  fetchCategories,
+  createProduct,
   ProductHistory,
 } from '../services/inventoryService';
+import { Category } from '../inventory-types';
 
 interface SelectionState {
   selected: boolean;
@@ -62,12 +65,22 @@ const CreateOrderForm: React.FC<Props> = ({
   const [categoryFilter, setCategoryFilter] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
   const [allVendors, setAllVendors] = useState<Vendor[]>([]);
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [vendorOverrides, setVendorOverrides] = useState<Map<number, VendorOverride>>(new Map());
   const [orderHistory, setOrderHistory] = useState<Record<number, ProductHistory>>({});
+
+  // New Product form state
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [newProdName, setNewProdName] = useState('');
+  const [newProdQty, setNewProdQty] = useState('');
+  const [newProdUnit, setNewProdUnit] = useState('');
+  const [newProdCategoryId, setNewProdCategoryId] = useState<number | ''>('');
+  const [newProdItems, setNewProdItems] = useState<{ name: string, qty: number, unit: string, category_id: number }[]>([]);
 
   useEffect(() => {
     loadProducts();
     fetchVendors().then(setAllVendors).catch(() => { });
+    fetchCategories().then(setAllCategories).catch(() => { });
     fetchLastOrderedByType(orderType).then(setOrderHistory).catch(() => { });
   }, []);
 
@@ -106,7 +119,7 @@ const CreateOrderForm: React.FC<Props> = ({
     setVendorOverrides((prev) => { const next = new Map(prev); next.delete(productId); return next; });
   };
 
-  const selectedCount = Array.from(selections.values() as unknown as SelectionState[]).filter((s) => s.selected).length;
+  const selectedCount = Array.from(selections.values() as unknown as SelectionState[]).filter((s) => s.selected).length + newProdItems.length;
 
   const orderTypeProducts = products.filter((p) => {
     const catOrderType = p.categories?.order_type;
@@ -140,7 +153,7 @@ const CreateOrderForm: React.FC<Props> = ({
 
   const handleSubmit = async () => {
     if (!isAddMode && !dueDate) { setError('Please select a due date.'); return; }
-    if (selectedCount === 0) { setError('Select at least one product.'); return; }
+    if (selectedCount === 0 && newProdItems.length === 0) { setError('Select or add at least one product.'); return; }
 
     for (const [pid, sel] of selections.entries()) {
       if (!sel.selected) continue;
@@ -170,6 +183,24 @@ const CreateOrderForm: React.FC<Props> = ({
             notes: undefined,
           });
         }
+
+        // Handle new products in add mode
+        for (const ni of newProdItems) {
+          // Create the product first
+          const created = await createProduct({
+            name: ni.name,
+            category_id: ni.category_id,
+            unit: ni.unit,
+            vendor_id: allVendors[0]?.id || 1, // Default to first vendor or ID 1
+          });
+          lines.push({
+            order_id: existingOrder!.id,
+            product_id: created.id,
+            qty_ordered: ni.qty,
+            unit: ni.unit,
+          });
+        }
+
         await createOrderLines(lines);
         onItemsAdded?.();
       } else {
@@ -199,6 +230,23 @@ const CreateOrderForm: React.FC<Props> = ({
             notes: undefined,
           });
         }
+
+        // Handle new products
+        for (const ni of newProdItems) {
+          const created = await createProduct({
+            name: ni.name,
+            category_id: ni.category_id,
+            unit: ni.unit,
+            vendor_id: allVendors[0]?.id || 1,
+          });
+          lines.push({
+            order_id: newOrder.id,
+            product_id: created.id,
+            qty_ordered: ni.qty,
+            unit: ni.unit,
+          });
+        }
+
         await createOrderLines(lines);
         onSubmit(newOrder);
       }
@@ -275,6 +323,103 @@ const CreateOrderForm: React.FC<Props> = ({
                 className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-slate-800 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-ibg-400 resize-none"
               />
             </div>
+          </div>
+        )}
+
+        {/* New Item List (if any) */}
+        {newProdItems.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">New Items to be added to Master List</p>
+            {newProdItems.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-amber-100 shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm text-slate-800 truncate">{item.name}</p>
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {allCategories.find(c => c.id === item.category_id)?.name} · {item.qty} {item.unit}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setNewProdItems(prev => prev.filter((_, i) => i !== idx))}
+                  className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add New Product Button/Form */}
+        {!showAddProduct ? (
+          <button
+            onClick={() => setShowAddProduct(true)}
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 hover:text-ibg-600 hover:border-ibg-300 transition-all font-bold text-sm shadow-sm"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
+            Add Unlisted Item (Ad-hoc)
+          </button>
+        ) : (
+          <div className="bg-white rounded-2xl border-2 border-ibg-400 p-4 space-y-4 shadow-lg animate-slideIn">
+            <div className="flex justify-between items-center">
+              <h3 className="text-ibg-800 font-black text-xs uppercase tracking-widest">Add New Unlisted Item</h3>
+              <button onClick={() => setShowAddProduct(false)} className="text-slate-400 hover:text-slate-600">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={newProdName}
+                onChange={e => setNewProdName(e.target.value)}
+                placeholder="Product Name (e.g. Fresh Ginger)"
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-ibg-400"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  value={newProdQty}
+                  onChange={e => setNewProdQty(e.target.value)}
+                  placeholder="Quantity"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-ibg-400"
+                />
+                <input
+                  type="text"
+                  value={newProdUnit}
+                  onChange={e => setNewProdUnit(e.target.value)}
+                  placeholder="Unit (e.g. lbs, cs)"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-ibg-400"
+                />
+              </div>
+              <select
+                value={newProdCategoryId}
+                onChange={e => setNewProdCategoryId(e.target.value ? Number(e.target.value) : '')}
+                className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
+              >
+                <option value="">Select Category</option>
+                {allCategories.filter(c => !c.order_type || c.order_type === orderType).map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => {
+                if (!newProdName || !newProdQty || !newProdUnit || !newProdCategoryId) return;
+                setNewProdItems(prev => [...prev, {
+                  name: newProdName,
+                  qty: parseFloat(newProdQty),
+                  unit: newProdUnit,
+                  category_id: newProdCategoryId as number
+                }]);
+                setNewProdName(''); setNewProdQty(''); setNewProdUnit(''); setNewProdCategoryId('');
+                setShowAddProduct(false);
+              }}
+              disabled={!newProdName || !newProdQty || !newProdUnit || !newProdCategoryId}
+              className="w-full py-2.5 rounded-xl bg-ibg-600 text-white font-black text-xs uppercase tracking-widest disabled:opacity-50 disabled:bg-slate-300 transition-all font-bold"
+            >
+              Add to List
+            </button>
           </div>
         )}
 

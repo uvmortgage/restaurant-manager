@@ -168,12 +168,63 @@ export async function fetchOrderLinesWithProducts(orderId: number): Promise<Orde
     qty_ordered: row.qty_ordered,
     unit: row.unit ?? row.products?.unit,
     notes: row.notes,
+    shopping_status: row.shopping_status,
     created_at: row.created_at,
     product_name: row.products?.name ?? `Product #${row.product_id}`,
     vendor_name: row.products?.vendors?.name,
     category_name: row.products?.categories?.name,
     category_sort_order: row.products?.categories?.sort_order ?? 99,
   }));
+}
+
+export async function updateOrderLineShopping(
+  lineId: number,
+  status: 'FOUND' | 'NOT_FOUND' | 'ALTERNATIVE',
+  notes?: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('order_lines')
+    .update({
+      shopping_status: status,
+      notes: notes,
+      qty_shipped: status === 'FOUND' ? undefined : undefined // We can decide if FOUND auto-sets qty_shipped
+    })
+    .eq('id', lineId);
+  if (error) throw new Error(error.message);
+}
+
+export async function completeOrderShopping(orderId: number, lines: OrderLineDetail[]): Promise<void> {
+  // 1. Update order status to COMPLETED
+  const { error: orderError } = await supabase
+    .from('orders')
+    .update({
+      status: 'COMPLETED',
+      closed_at: new Date().toISOString()
+    })
+    .eq('id', orderId);
+
+  if (orderError) throw new Error(orderError.message);
+
+  // 2. Sync qty_shipped for found items and update notes
+  // We do this in a loop for now, or we could use multiple updates if Supabase supported bulk update by ID easily
+  for (const line of lines) {
+    const updates: any = {
+      shopping_status: line.shopping_status || 'NOT_FOUND',
+      notes: line.notes
+    };
+
+    // If found, set qty_shipped to qty_ordered
+    if (line.shopping_status === 'FOUND') {
+      updates.qty_shipped = line.qty_ordered;
+    } else {
+      updates.qty_shipped = 0;
+    }
+
+    await supabase
+      .from('order_lines')
+      .update(updates)
+      .eq('id', line.id);
+  }
 }
 
 export async function submitOrder(orderId: number, submittedBy: string): Promise<void> {

@@ -73,6 +73,7 @@ const App: React.FC = () => {
   const [selectedOrderType, setSelectedOrderType] = useState<OrderType>('WEEKLY_FOOD');
   const [isInitializing, setIsInitializing] = useState(true);
   const [autoOpenAddItems, setAutoOpenAddItems] = useState(false);
+  const [autoOpenShopping, setAutoOpenShopping] = useState(false);
   const [authError, setAuthError] = useState<string | undefined>();
   const [simulatedRole, setSimulatedRole] = useState<UserRole | null>(null);
   const [activeRestaurantIdState, setActiveRestaurantIdState] = useState<string | null>(null);
@@ -80,28 +81,52 @@ const App: React.FC = () => {
   // Compute effective user: override role when simulating
   const effectiveUser = useMemo(() => {
     if (!state.currentUser) return null;
+
+    // Determine base role for this restaurant
+    let baseRole: UserRole = 'User';
+    const access = state.currentUser.access?.find(a => a.restaurant_id === activeRestaurantIdState);
+    if (access) {
+      baseRole = access.role;
+    } else if (isSuperAdmin(state.currentUser.email)) {
+      baseRole = 'Owner';
+    }
+
     if (simulatedRole && isSuperAdmin(state.currentUser.email)) {
       return { ...state.currentUser, role: simulatedRole };
     }
-    return state.currentUser;
-  }, [state.currentUser, simulatedRole]);
+    return { ...state.currentUser, role: baseRole };
+  }, [state.currentUser, simulatedRole, activeRestaurantIdState]);
 
   const loadDataAndEnter = async (appUser: User, explicitRestaurantId?: string) => {
     try {
       // First, fetch restaurants to determine access and IDs
-      const restaurants = await dataService.getRestaurants();
+      const allRestaurants = await dataService.getRestaurants();
+      const activeRestaurants = allRestaurants.filter(r => r.is_active);
 
       // Determine which restaurant to load data for
       let rIdToUse = explicitRestaurantId;
+
+      // Helper to check if a restaurant ID is active
+      const isActive = (id: string | undefined) => !!id && activeRestaurants.some(r => r.id === id);
+
       if (!rIdToUse) {
-        if (appUser.default_restaurant_id) {
+        if (isActive(appUser.default_restaurant_id)) {
           rIdToUse = appUser.default_restaurant_id;
-        } else if (appUser.restaurant_id) {
-          rIdToUse = appUser.restaurant_id;
-        } else if (isSuperAdmin(appUser.email) && restaurants.length > 0) {
-          rIdToUse = restaurants.find(r => r.name === "Inchin's Bamboo Garden")?.id || restaurants[0].id;
+        } else if (appUser.access && appUser.access.length > 0) {
+          // Find first active restaurant in access list
+          const firstActiveAccess = appUser.access.find(acc => isActive(acc.restaurant_id));
+          if (firstActiveAccess) {
+            rIdToUse = firstActiveAccess.restaurant_id;
+          }
+        }
+
+        // Fallback for super admin or if still no restaurant
+        if (!rIdToUse && isSuperAdmin(appUser.email) && activeRestaurants.length > 0) {
+          rIdToUse = activeRestaurants.find(r => r.name === "Inchin's Bamboo Garden")?.id || activeRestaurants[0].id;
         }
       }
+
+      const restaurants = allRestaurants;
 
       if (rIdToUse) {
         setActiveRestaurantId(rIdToUse);
@@ -123,6 +148,8 @@ const App: React.FC = () => {
 
       // Route based on access level
       if (isSuperAdmin(appUser.email)) {
+        setCurrentScreen('DASHBOARD');
+      } else if (appUser.access && appUser.access.length > 0) {
         setCurrentScreen('DASHBOARD');
       } else if (appUser.restaurant_id) {
         setCurrentScreen('DASHBOARD');
@@ -536,9 +563,10 @@ const App: React.FC = () => {
               setSelectedOrderType(orderType);
               setCurrentScreen('CREATE_ORDER');
             }}
-            onViewOrder={(order, openAddItems) => {
+            onViewOrder={(order, openAddItems, openShopping) => {
               setSelectedOrder(order);
               setAutoOpenAddItems(openAddItems || false);
+              setAutoOpenShopping(openShopping || false);
               setCurrentScreen('ORDER_REVIEW');
             }}
             onBack={() => setCurrentScreen('DASHBOARD')}
@@ -561,24 +589,29 @@ const App: React.FC = () => {
             user={state.currentUser!}
             order={selectedOrder}
             initialShowAddItems={autoOpenAddItems}
+            initialShowShopping={autoOpenShopping}
             onBack={() => {
               setSelectedOrder(null);
               setAutoOpenAddItems(false);
+              setAutoOpenShopping(false);
               setCurrentScreen('INVENTORY_MANAGER');
             }}
             onSubmitted={() => {
               setSelectedOrder(null);
               setAutoOpenAddItems(false);
+              setAutoOpenShopping(false);
               setCurrentScreen('INVENTORY_MANAGER');
             }}
             onDeleted={() => {
               setSelectedOrder(null);
               setAutoOpenAddItems(false);
+              setAutoOpenShopping(false);
               setCurrentScreen('INVENTORY_MANAGER');
             }}
             onDuplicated={(newOrder) => {
               setSelectedOrder(newOrder);
               setAutoOpenAddItems(true);
+              setAutoOpenShopping(false);
             }}
           />
         ) : null;

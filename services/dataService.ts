@@ -9,8 +9,8 @@ export const dataService = {
 
   getUsers: async (): Promise<User[]> => {
     const { data, error } = await supabase
-      .from('app_users')
-      .select('*')
+      .from('users')
+      .select('*, access:user_restaurant_access(*)')
       .order('name');
     if (error) console.error('getUsers error:', error);
     return (data ?? []) as User[];
@@ -18,8 +18,8 @@ export const dataService = {
 
   getUserByEmail: async (email: string): Promise<User | null> => {
     const { data, error } = await supabase
-      .from('app_users')
-      .select('*')
+      .from('users')
+      .select('*, access:user_restaurant_access(*)')
       .eq('email', email)
       .single();
     if (error || !data) return null;
@@ -27,30 +27,32 @@ export const dataService = {
   },
 
   createUserFromAuth: async (authUser: { id: string; name: string; email: string; photo?: string }): Promise<User> => {
-    const newUser: User = {
+    const newUser = {
       id: authUser.id,
       name: authUser.name,
       email: authUser.email,
-      role: OWNER_EMAILS.has(authUser.email) ? 'Owner' : 'User',
       status: 'Active',
       photo: authUser.photo,
     };
+
     const { data, error } = await supabase
-      .from('app_users')
+      .from('users')
       .insert(newUser)
-      .select()
+      .select('*, access:user_restaurant_access(*)')
       .single();
+
     if (error) throw new Error(error.message);
     return data as User;
   },
 
   updateUser: async (user: User): Promise<void> => {
-    const { error } = await supabase.from('app_users').update(user).eq('id', user.id);
+    const { access, role, restaurant_id, ...userData } = user;
+    const { error } = await supabase.from('users').update(userData).eq('id', user.id);
     if (error) throw new Error(error.message);
   },
 
   deleteUser: async (userId: string): Promise<void> => {
-    const { error } = await supabase.from('app_users').delete().eq('id', userId);
+    const { error } = await supabase.from('users').delete().eq('id', userId);
     if (error) throw new Error(error.message);
   },
 
@@ -145,11 +147,25 @@ export const dataService = {
     if (error) throw new Error(error.message);
   },
 
-  assignUserToRestaurant: async (userId: string, restaurantId: string | null): Promise<void> => {
+  assignUserToRestaurant: async (userId: string, restaurantId: string, role: string = 'User'): Promise<void> => {
+    if (!restaurantId) return;
     const { error } = await supabase
-      .from('app_users')
-      .update({ restaurant_id: restaurantId })
-      .eq('id', userId);
+      .from('user_restaurant_access')
+      .upsert({
+        user_id: userId,
+        restaurant_id: restaurantId,
+        role: role
+      }, { onConflict: 'user_id,restaurant_id' });
+
+    if (error) throw new Error(error.message);
+  },
+
+  removeUserFromRestaurant: async (userId: string, restaurantId: string): Promise<void> => {
+    const { error } = await supabase
+      .from('user_restaurant_access')
+      .delete()
+      .eq('user_id', userId)
+      .eq('restaurant_id', restaurantId);
     if (error) throw new Error(error.message);
   },
 

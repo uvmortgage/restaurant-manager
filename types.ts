@@ -1,15 +1,23 @@
 
 export type UserRole = 'Owner' | 'Manager' | 'Dish Washer' | 'Food Runner' | 'Front Staff' | 'User';
 
+export interface UserRestaurantAccess {
+  user_id: string;
+  restaurant_id: string;
+  role: UserRole;
+  created_at?: string;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
-  role: UserRole;
+  role: UserRole; // Current/Active role
   status: 'Active' | 'Inactive';
   photo?: string;
-  restaurant_id?: string;
+  restaurant_id?: string; // Current/Active restaurant
   default_restaurant_id?: string;
+  access?: UserRestaurantAccess[];
 }
 
 export interface Restaurant {

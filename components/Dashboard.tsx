@@ -47,7 +47,11 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const userRestaurants = isSuperAdminUser
     ? (restaurants || [])
-    : (restaurants || []).filter(r => r.admin_email === realUser.email || r.id === realUser.restaurant_id);
+    : (restaurants || []).filter(r =>
+      r.admin_email === realUser.email ||
+      r.id === realUser.restaurant_id ||
+      realUser.access?.some(acc => acc.restaurant_id === r.id)
+    );
 
   const activeRestaurant = userRestaurants.find(r => r.id === activeRestaurantId) || userRestaurants[0];
 

@@ -21,7 +21,7 @@ type OrderTypeFilter = 'ALL' | OrderType;
 interface Props {
   user: User;
   onCreateOrder: (orderType: OrderType) => void;
-  onViewOrder: (order: Order, autoOpenAddItems?: boolean) => void;
+  onViewOrder: (order: Order, autoOpenAddItems?: boolean, autoOpenShopping?: boolean) => void;
   onBack: () => void;
 }
 
@@ -30,6 +30,7 @@ const STATUS_COLORS: Record<string, string> = {
   SUBMITTED: 'bg-amber-100 text-amber-700',
   APPROVED: 'bg-emerald-100 text-emerald-700',
   SENT: 'bg-blue-100 text-blue-700',
+  COMPLETED: 'bg-teal-100 text-teal-700',
 };
 
 const ORDER_TYPE_COLORS: Record<string, string> = {
@@ -714,9 +715,25 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                               <p className="text-slate-400 text-xs mt-0.5">By {order.submitted_by}</p>
                             )}
                           </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-2xl font-black text-ibg-600">{order.line_count ?? 0}</p>
-                            <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">items</p>
+                          <div className="flex flex-col items-end shrink-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              {order.status !== 'DRAFT' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onViewOrder(order, false, true);
+                                  }}
+                                  className="p-2 rounded-xl bg-slate-900 text-white hover:bg-black transition-all shadow-sm active:scale-90"
+                                  title="Quick Shopping Mode"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" /></svg>
+                                </button>
+                              )}
+                              <div className="text-right">
+                                <p className="text-2xl font-black text-ibg-600 leading-none">{order.line_count ?? 0}</p>
+                                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">items</p>
+                              </div>
+                            </div>
                           </div>
                         </div>
                         {order.notes && (
