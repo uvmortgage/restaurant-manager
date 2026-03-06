@@ -8,6 +8,25 @@ export interface User {
   role: UserRole;
   status: 'Active' | 'Inactive';
   photo?: string;
+  restaurant_id?: string;
+}
+
+export interface Restaurant {
+  id: string;
+  name: string;
+  location?: string;
+  admin_email: string;
+  is_active: boolean;
+  created_at?: string;
+}
+
+export interface AccessRequest {
+  id: string;
+  user_email: string;
+  user_name?: string;
+  restaurant_id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requested_at: string;
 }
 
 export type TransactionType = 'Income' | 'Expense';
@@ -68,4 +87,5 @@ export interface AppState {
   receipts: Receipt[];
   cateringEvents: CateringEvent[];
   users: User[];
+  restaurants: Restaurant[];
 }
