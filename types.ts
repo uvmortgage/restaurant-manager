@@ -9,6 +9,7 @@ export interface User {
   status: 'Active' | 'Inactive';
   photo?: string;
   restaurant_id?: string;
+  default_restaurant_id?: string;
 }
 
 export interface Restaurant {

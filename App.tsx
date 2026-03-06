@@ -94,7 +94,9 @@ const App: React.FC = () => {
       // Determine which restaurant to load data for
       let rIdToUse = explicitRestaurantId;
       if (!rIdToUse) {
-        if (appUser.restaurant_id) {
+        if (appUser.default_restaurant_id) {
+          rIdToUse = appUser.default_restaurant_id;
+        } else if (appUser.restaurant_id) {
           rIdToUse = appUser.restaurant_id;
         } else if (isSuperAdmin(appUser.email) && restaurants.length > 0) {
           rIdToUse = restaurants.find(r => r.name === "Inchin's Bamboo Garden")?.id || restaurants[0].id;
@@ -457,6 +459,7 @@ const App: React.FC = () => {
           <div className="min-h-screen flex items-center justify-center p-4">
             <UserForm
               user={selectedUser}
+              restaurants={state.restaurants}
               onSubmit={handleUserSubmit}
               onCancel={() => {
                 setCurrentScreen('USER_MANAGER');

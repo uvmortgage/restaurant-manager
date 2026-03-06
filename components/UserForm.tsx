@@ -4,19 +4,21 @@ import { User, UserRole } from '../types';
 
 interface UserFormProps {
   user: User;
+  restaurants: import('../types').Restaurant[];
   onSubmit: (userData: User) => void;
   onCancel: () => void;
 }
 
 const ROLES: UserRole[] = ['Owner', 'Manager', 'Front Staff', 'Food Runner', 'Dish Washer', 'User'];
 
-const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
+const UserForm: React.FC<UserFormProps> = ({ user, restaurants, onSubmit, onCancel }) => {
   const [role, setRole] = useState<UserRole>(user.role);
   const [status, setStatus] = useState<'Active' | 'Inactive'>(user.status);
+  const [defaultRestaurantId, setDefaultRestaurantId] = useState<string>(user.default_restaurant_id || '');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ ...user, role, status });
+    onSubmit({ ...user, role, status, default_restaurant_id: defaultRestaurantId || undefined });
   };
 
   return (
@@ -27,7 +29,7 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Staff Management</p>
         </div>
         <button onClick={onCancel} className="text-slate-400 p-2 hover:bg-slate-100 rounded-full transition-all">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
         </button>
       </div>
 
@@ -67,6 +69,20 @@ const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
           >
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Default Dashboard View</label>
+          <select
+            value={defaultRestaurantId}
+            onChange={(e) => setDefaultRestaurantId(e.target.value)}
+            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-violet-500 transition-all outline-none text-sm font-bold text-slate-700"
+          >
+            <option value="">— Use First Available —</option>
+            {restaurants.map(r => (
+              <option key={r.id} value={r.id}>{r.name}{r.location ? ` · ${r.location}` : ''}</option>
+            ))}
           </select>
         </div>
 
