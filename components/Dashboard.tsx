@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { User, UserRole, Transaction, Receipt, CateringEvent, Restaurant } from '../types';
-import { isSuperAdmin } from '../App';
+import { isSuperAdmin } from '../constants';
 
 interface DashboardProps {
   user: User;

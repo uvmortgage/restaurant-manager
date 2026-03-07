@@ -55,6 +55,7 @@ export interface Product {
 
 export type OrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'SENT' | 'COMPLETED';
 export type OrderType = 'WEEKLY_FOOD' | 'BAR' | 'IBG Products' | 'IBG Crockery';
+export type OrderTypeFilter = 'ALL' | OrderType;
 
 export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   WEEKLY_FOOD: 'Weekly Food',

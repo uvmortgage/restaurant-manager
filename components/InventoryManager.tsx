@@ -1,63 +1,30 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User } from '../types';
-import { Order, OrderType, ORDER_TYPE_LABELS, Product, Vendor, Category } from '../inventory-types';
+import { supabase } from '../services/supabaseClient';
 import {
   fetchOrders,
   fetchOrderLines,
   fetchAllProducts,
   fetchVendors,
   fetchCategories,
-  createProduct,
-  updateProduct,
-  softDeleteProduct,
-  deleteOrder,
   createOrder,
-  createOrderLines,
+  createProduct,
+  deleteOrder,
+  duplicateOrder,
+  updateProduct,
+  softDeleteProduct as deleteProduct,
+  reactivateProduct,
+  bulkUpdateProducts
 } from '../services/inventoryService';
+import { Order, OrderLine, Product, Vendor, Category, OrderType, OrderTypeFilter } from '../inventory-types';
+import { ORDER_TYPE_ICONS, isSuperAdmin } from '../constants';
 
-type ActiveTab = 'orders' | 'products';
-type OrderTypeFilter = 'ALL' | OrderType;
-
-interface Props {
-  user: User;
-  onCreateOrder: (orderType: OrderType) => void;
-  onViewOrder: (order: Order, autoOpenAddItems?: boolean, autoOpenShopping?: boolean) => void;
-  onBack: () => void;
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'bg-slate-100 text-slate-600',
-  SUBMITTED: 'bg-amber-100 text-amber-700',
-  APPROVED: 'bg-emerald-100 text-emerald-700',
-  SENT: 'bg-blue-100 text-blue-700',
-  COMPLETED: 'bg-teal-100 text-teal-700',
-};
-
-const ORDER_TYPE_COLORS: Record<string, string> = {
-  WEEKLY_FOOD: 'bg-teal-100 text-teal-700',
-  BAR: 'bg-purple-100 text-purple-700',
-  'IBG Products': 'bg-indigo-100 text-indigo-700',
-  'IBG Crockery': 'bg-rose-100 text-rose-700',
-};
-
-const ORDER_TYPE_HEADER_COLORS: Record<string, string> = {
-  WEEKLY_FOOD: 'bg-teal-600',
-  BAR: 'bg-purple-600',
-  'IBG Products': 'bg-indigo-600',
-  'IBG Crockery': 'bg-rose-600',
-};
-
-const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
-  WEEKLY_FOOD: 'bg-teal-100 text-teal-700',
-  BAR: 'bg-purple-100 text-purple-700',
-  'IBG Products': 'bg-indigo-100 text-indigo-700',
-};
-
-const ORDER_TYPE_ICONS: Record<string, string> = {
-  WEEKLY_FOOD: '🥦',
-  BAR: '🍺',
-  'IBG Products': '🏮',
-  'IBG Crockery': '🍽️',
+const EMPTY_FORM = {
+  name: '',
+  category_id: '',
+  vendor_id: '',
+  unit: '',
+  min_order: '',
+  notes: ''
 };
 
 interface ProductFormState {
@@ -65,45 +32,20 @@ interface ProductFormState {
   category_id: string;
   vendor_id: string;
   unit: string;
-  notes: string;
   min_order: string;
+  notes: string;
+};
+
+interface InventoryManagerProps {
+  onViewOrder: (order: Order & { line_count?: number }, isNew?: boolean) => void;
+  activeTab?: 'orders' | 'products';
+  onBack?: () => void;
+  user?: any;
+  onCreateOrder?: (orderType: OrderType) => void;
 }
 
-const EMPTY_FORM: ProductFormState = { name: '', category_id: '', vendor_id: '', unit: '', notes: '', min_order: '' };
-
-// ── IBG Brand Header ──────────────────────────────────────────────────────────
-const BrandHeader: React.FC<{ onBack: () => void; title: string; subtitle?: string; action?: React.ReactNode }> = ({
-  onBack, title, subtitle, action,
-}) => (
-  <header className="flex items-center gap-3 px-4 py-3 bg-ibg-600 sticky top-0 z-20 shadow-md">
-    <button
-      onClick={onBack}
-      className="p-2 rounded-xl bg-white/20 hover:bg-white/30 text-white transition-colors shrink-0 border border-white/20"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-    </button>
-    <div className="flex items-center gap-2 flex-1 min-w-0">
-      <svg width="20" height="20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
-        <rect x="14" y="2" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.95" />
-        <rect x="14" y="15" width="5" height="11" rx="2.5" fill="white" fillOpacity="0.8" />
-        <rect x="14" y="28" width="5" height="10" rx="2.5" fill="white" fillOpacity="0.95" />
-        <rect x="11" y="12" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.5" />
-        <rect x="11" y="25" width="11" height="3.5" rx="1.75" fill="white" fillOpacity="0.5" />
-        <path d="M19 7.5 Q28 3 26 13 Q21 9 19 7.5Z" fill="white" fillOpacity="0.65" />
-        <path d="M14 21 Q5 16 7 27 Q12 23 14 21Z" fill="white" fillOpacity="0.65" />
-      </svg>
-      <div className="min-w-0">
-        <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest leading-none">Inchin's Bamboo Garden</p>
-        <h1 className="text-white font-black text-lg leading-tight truncate">{title}</h1>
-      </div>
-    </div>
-    {subtitle && <span className="text-white/60 text-[10px] font-bold uppercase tracking-wider shrink-0">{subtitle}</span>}
-    {action}
-  </header>
-);
-
-const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, onBack }) => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('orders');
+const InventoryManager: React.FC<InventoryManagerProps> = ({ onViewOrder, activeTab: initialTab = 'orders', onBack, onCreateOrder }) => {
+  const [activeTab, setActiveTab] = useState<'orders' | 'products'>(initialTab);
 
   // ── Orders tab state ──────────────────────────────────────────────────────
   const [orders, setOrders] = useState<(Order & { line_count?: number })[]>([]);
@@ -143,6 +85,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkSaveResults, setBulkSaveResults] = useState<{ saved: number; failed: number } | null>(null);
+  const [displayCount, setDisplayCount] = useState(100);
 
   // ── Load orders ────────────────────────────────────────────────────────────
   useEffect(() => { loadOrders(); }, []);
@@ -170,22 +113,14 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     }
   };
 
-  const handleDuplicateOrder = async (order: Order) => {
+  const handleDuplicate = async (order: Order) => {
     setDuplicatingOrderId(Number(order.id));
-    setOrdersError(null);
     try {
+      const newOrder = await duplicateOrder(Number(order.id));
       const lines = await fetchOrderLines(Number(order.id));
-      const d = new Date(); d.setDate(d.getDate() + 2);
-      const newOrder = await createOrder({
-        due_date: d.toISOString().split('T')[0],
-        submitted_by: user.name,
-        status: 'DRAFT',
-        order_type: (order.order_type ?? 'WEEKLY_FOOD') as OrderType,
-        notes: order.notes,
-      });
       if (lines.length > 0) {
-        await createOrderLines(
-          lines.map((l) => ({
+        await supabase.from('order_lines').insert(
+          lines.map(l => ({
             order_id: newOrder.id,
             product_id: l.product_id,
             qty_ordered: l.qty_ordered,
@@ -212,6 +147,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const loadProducts = async () => {
     setProdLoading(true);
     setProdError(null);
+    setDisplayCount(100);
     try {
       const [prods, vends, cats] = await Promise.all([fetchAllProducts(), fetchVendors(), fetchCategories()]);
       setProducts(prods);
@@ -227,10 +163,9 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const handleDeleteOrder = async (orderId: number) => {
     setDeletingOrderId(orderId);
     setConfirmDeleteOrderId(null);
-    setDeleteOrderError(null);
     try {
       await deleteOrder(orderId);
-      setOrders((prev) => prev.filter((o) => Number(o.id) !== orderId));
+      setOrders(prev => prev.filter(o => Number(o.id) !== orderId));
     } catch (e: any) {
       setDeleteOrderError(e.message ?? 'Failed to delete order');
     } finally {
@@ -238,40 +173,28 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     }
   };
 
-  const formatDate = (iso: string) => {
-    if (!iso) return '—';
-    const d = new Date(iso + (iso.includes('T') ? '' : 'T00:00:00'));
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
-
-  // ── Filtered orders ────────────────────────────────────────────────────────
-  const filteredOrders = orders.filter((o) => {
-    if (typeFilter === 'ALL') return true;
-    return (o.order_type ?? 'WEEKLY_FOOD') === typeFilter;
-  });
-
-  // ── Product handlers ───────────────────────────────────────────────────────
-  const handleAddProduct = async () => {
-    if (!addForm.name.trim()) { setAddError('Product name is required.'); return; }
-    if (!addForm.category_id) { setAddError('Category is required.'); return; }
-    if (!addForm.vendor_id) { setAddError('Vendor is required.'); return; }
-    if (!addForm.unit.trim()) { setAddError('Unit is required (e.g. lbs, pcs).'); return; }
+  // ── Product specific handlers ─────────────────────────────────────────────
+  const handleSaveAdd = async () => {
+    if (!addForm.name || !addForm.category_id || !addForm.vendor_id || !addForm.unit) {
+      setAddError('Please fill in name, category, vendor, and unit');
+      return;
+    }
     setAddSaving(true);
     setAddError(null);
     try {
-      const created = await createProduct({
-        name: addForm.name.trim(),
+      const p = await createProduct({
+        name: addForm.name,
         category_id: Number(addForm.category_id),
         vendor_id: Number(addForm.vendor_id),
-        unit: addForm.unit.trim(),
-        notes: addForm.notes.trim() || undefined,
+        unit: addForm.unit,
         min_order: addForm.min_order ? Number(addForm.min_order) : undefined,
+        notes: addForm.notes
       });
-      setProducts((prev) => [created, ...prev].sort((a, b) => a.name.localeCompare(b.name)));
-      setShowAddForm(false);
+      setProducts(prev => [...prev, p]);
       setAddForm(EMPTY_FORM);
+      setShowAddForm(false);
     } catch (e: any) {
-      setAddError(e.message ?? 'Failed to add product.');
+      setAddError(e.message ?? 'Failed to add product');
     } finally {
       setAddSaving(false);
     }
@@ -284,61 +207,45 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
       category_id: String(p.category_id),
       vendor_id: String(p.vendor_id),
       unit: p.unit,
-      notes: p.notes ?? '',
-      min_order: p.min_order?.toString() ?? '',
+      min_order: p.min_order?.toString() || '',
+      notes: p.notes || ''
     });
     setEditError(null);
   };
 
   const handleSaveEdit = async (id: number) => {
-    if (!editForm.name.trim()) { setEditError('Name is required.'); return; }
-    if (!editForm.unit.trim()) { setEditError('Unit is required.'); return; }
+    if (!editForm.name || !editForm.category_id || !editForm.vendor_id) {
+      setEditError('Please fill in name, category, and vendor');
+      return;
+    }
     setEditSaving(true);
-    setEditError(null);
     try {
-      await updateProduct(id, {
-        name: editForm.name.trim(),
+      const updated = await updateProduct(id, {
+        name: editForm.name,
         category_id: Number(editForm.category_id),
         vendor_id: Number(editForm.vendor_id),
-        unit: editForm.unit.trim(),
-        notes: editForm.notes.trim() || undefined,
-        min_order: editForm.min_order ? Number(editForm.min_order) : undefined,
+        unit: editForm.unit,
+        min_order: editForm.min_order ? Number(editForm.min_order) : null,
+        notes: editForm.notes
       });
-      setProducts((prev) =>
-        prev.map((p) =>
-          p.id === id
-            ? {
-              ...p,
-              name: editForm.name.trim(),
-              category_id: Number(editForm.category_id),
-              vendor_id: Number(editForm.vendor_id),
-              unit: editForm.unit.trim(),
-              notes: editForm.notes.trim() || undefined,
-              min_order: editForm.min_order ? Number(editForm.min_order) : undefined,
-              categories: categories.find((c) => c.id === Number(editForm.category_id))
-                ? { name: categories.find((c) => c.id === Number(editForm.category_id))!.name, order_type: categories.find((c) => c.id === Number(editForm.category_id))!.order_type }
-                : p.categories,
-              vendors: vendors.find((v) => v.id === Number(editForm.vendor_id))
-                ? { name: vendors.find((v) => v.id === Number(editForm.vendor_id))!.name }
-                : p.vendors,
-            }
-            : p
-        )
-      );
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updated } : p));
       setEditingId(null);
     } catch (e: any) {
-      setEditError(e.message ?? 'Failed to save.');
+      setEditError(e.message ?? 'Failed to update product');
     } finally {
       setEditSaving(false);
     }
   };
 
   const handleDelete = async (id: number) => {
+    if (!window.confirm('Are you sure you want to deactivate this product? It will no longer appear in search.')) return;
     setDeletingId(id);
     try {
-      await softDeleteProduct(id);
-      setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, is_active: false } : p)));
-    } catch { /* silently fail */ } finally {
+      await deleteProduct(id);
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, is_active: false } : p));
+    } catch (e: any) {
+      alert(e.message ?? 'Failed to delete product');
+    } finally {
       setDeletingId(null);
     }
   };
@@ -346,188 +253,173 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
   const handleReactivate = async (id: number) => {
     setDeletingId(id);
     try {
-      await updateProduct(id, { is_active: true });
-      setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, is_active: true } : p)));
-    } catch { /* silently fail */ } finally {
+      await reactivateProduct(id);
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, is_active: true } : p));
+    } catch (e: any) {
+      alert(e.message ?? 'Failed to reactivate product');
+    } finally {
       setDeletingId(null);
     }
-  };
-
-  // ── Bulk edit handlers ────────────────────────────────────────────────────
-  const toggleBulkEditMode = () => {
-    setBulkEditMode((v) => !v);
-    setBulkSelected(new Set());
-    setBulkEdits({});
-    setBulkError(null);
-    setBulkSaveResults(null);
-    setEditingId(null);
-  };
-
-  const toggleBulkSelect = (p: Product) => {
-    setBulkSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(p.id)) {
-        next.delete(p.id);
-        setBulkEdits((e) => { const n = { ...e }; delete n[p.id]; return n; });
-      } else {
-        next.add(p.id);
-        setBulkEdits((e) => ({
-          ...e,
-          [p.id]: {
-            name: p.name,
-            category_id: String(p.category_id),
-            vendor_id: String(p.vendor_id),
-            unit: p.unit,
-            notes: p.notes ?? '',
-            min_order: p.min_order?.toString() ?? '',
-          },
-        }));
-      }
-      return next;
-    });
-  };
-
-  const selectAllVisible = () => {
-    const newEdits: Record<number, ProductFormState> = { ...bulkEdits };
-    const newSelected = new Set<number>(bulkSelected);
-    filteredProducts.forEach((p) => {
-      if (!newSelected.has(p.id)) {
-        newSelected.add(p.id);
-        newEdits[p.id] = {
-          name: p.name,
-          category_id: String(p.category_id),
-          vendor_id: String(p.vendor_id),
-          unit: p.unit,
-          notes: p.notes ?? '',
-          min_order: p.min_order?.toString() ?? '',
-        };
-      }
-    });
-    setBulkSelected(newSelected);
-    setBulkEdits(newEdits);
-  };
-
-  const updateBulkEdit = (id: number, field: keyof ProductFormState, value: string) => {
-    setBulkEdits((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], [field]: value },
-    }));
   };
 
   const handleSaveBulk = async () => {
     setBulkSaving(true);
     setBulkError(null);
     setBulkSaveResults(null);
-    let saved = 0;
-    let failed = 0;
-    const results = await Promise.allSettled(
-      Array.from(bulkSelected).map(async (id: unknown) => {
-        const numId = id as number;
-        const form = bulkEdits[numId];
-        if (!form) return;
-        await updateProduct(numId, {
-          name: form.name.trim(),
-          category_id: Number(form.category_id),
-          vendor_id: Number(form.vendor_id),
-          unit: form.unit.trim(),
-          notes: form.notes.trim() || undefined,
-          min_order: form.min_order ? Number(form.min_order) : undefined,
-        });
-        return id;
-      })
-    );
-    results.forEach((r) => (r.status === 'fulfilled' ? saved++ : failed++));
+    try {
+      const updates = Object.entries(bulkEdits).map(([id, form]) => ({
+        id: Number(id),
+        updates: {
+          name: form.name,
+          vendor_id: form.vendor_id ? Number(form.vendor_id) : undefined,
+          category_id: form.category_id ? Number(form.category_id) : undefined,
+          unit: form.unit,
+        }
+      }));
 
-    // Refresh local product list from successful saves
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (!bulkSelected.has(p.id)) return p;
-        const form = bulkEdits[p.id];
-        if (!form) return p;
-        return {
-          ...p,
-          name: form.name.trim(),
-          category_id: Number(form.category_id),
-          vendor_id: Number(form.vendor_id),
-          unit: form.unit.trim(),
-          notes: form.notes.trim() || undefined,
-          categories: categories.find((c) => c.id === Number(form.category_id))
-            ? { name: categories.find((c) => c.id === Number(form.category_id))!.name, order_type: categories.find((c) => c.id === Number(form.category_id))!.order_type }
-            : p.categories,
-          vendors: vendors.find((v) => v.id === Number(form.vendor_id))
-            ? { name: vendors.find((v) => v.id === Number(form.vendor_id))!.name }
-            : p.vendors,
-        };
-      })
-    );
+      const results = await bulkUpdateProducts(updates);
+      const savedCount = results.filter(r => r.success).length;
+      const failedCount = results.length - savedCount;
 
-    setBulkSaveResults({ saved, failed });
-    if (failed === 0) {
-      setBulkSelected(new Set());
-      setBulkEdits({});
-      setBulkEditMode(false);
-    } else {
-      setBulkError(`${failed} product(s) failed to save. Please retry.`);
+      // Update local state with successful updates
+      const updatedIds = new Set(results.filter(r => r.success).map(r => r.id));
+      setProducts(prev => prev.map(p => {
+        if (updatedIds.has(p.id)) {
+          const form = bulkEdits[p.id];
+          return {
+            ...p,
+            name: form.name ?? p.name,
+            vendor_id: form.vendor_id ? Number(form.vendor_id) : p.vendor_id,
+            category_id: form.category_id ? Number(form.category_id) : p.category_id,
+            unit: form.unit ?? p.unit,
+          };
+        }
+        return p;
+      }));
+
+      setBulkSaveResults({ saved: savedCount, failed: failedCount });
+      if (failedCount === 0) {
+        setBulkSelected(new Set());
+        setBulkEdits({});
+        setTimeout(() => setBulkSaveResults(null), 3000);
+      } else {
+        setBulkError(`${failedCount} products failed to save.`);
+      }
+    } catch (e: any) {
+      setBulkError(e.message ?? 'Bulk update failed');
+    } finally {
+      setBulkSaving(false);
     }
-    setBulkSaving(false);
   };
 
-  // ── Computed: category order_type map ──────────────────────────────────────
+  const toggleBulkSelect = (p: Product) => {
+    const next = new Set(bulkSelected);
+    if (next.has(p.id)) {
+      next.delete(p.id);
+      const nextEdits = { ...bulkEdits };
+      delete nextEdits[p.id];
+      setBulkEdits(nextEdits);
+    } else {
+      next.add(p.id);
+      setBulkEdits(prev => ({
+        ...prev,
+        [p.id]: {
+          name: p.name,
+          vendor_id: String(p.vendor_id),
+          category_id: String(p.category_id),
+          unit: p.unit,
+          min_order: String(p.min_order || ''),
+          notes: p.notes || ''
+        }
+      }));
+    }
+    setBulkSelected(next);
+  };
+
+  const selectAllVisible = () => {
+    const next = new Set(bulkSelected);
+    filteredProducts.forEach(p => {
+      next.add(p.id);
+      if (!bulkEdits[p.id]) {
+        setBulkEdits(prev => ({
+          ...prev,
+          [p.id]: {
+            name: p.name,
+            vendor_id: String(p.vendor_id),
+            category_id: String(p.category_id),
+            unit: p.unit,
+            min_order: String(p.min_order || ''),
+            notes: p.notes || ''
+          }
+        }));
+      }
+    });
+    setBulkSelected(next);
+  };
+
+  const updateBulkEdit = (id: number, field: keyof ProductFormState, value: string) => {
+    setBulkEdits(prev => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value }
+    }));
+  };
+
+  const toggleBulkEditMode = () => {
+    if (bulkEditMode) {
+      setBulkSelected(new Set());
+      setBulkEdits({});
+      setBulkError(null);
+      setBulkSaveResults(null);
+    }
+    setBulkEditMode(!bulkEditMode);
+  };
+
+  // ── Derived products state ────────────────────────────────────────────────
   const catOrderTypeMap = useMemo(() => {
-    const m: Record<number, string> = {};
-    categories.forEach((c) => { m[c.id] = c.order_type ?? 'WEEKLY_FOOD'; });
+    const m: Record<number, OrderType> = {};
+    categories.forEach(c => { m[c.id] = c.order_type || 'WEEKLY_FOOD'; });
     return m;
   }, [categories]);
 
-  // ── Vendors filtered by current type selection ─────────────────────────────
-  const vendorsForType = useMemo(() => {
-    if (prodTypeFilter === 'ALL') return vendors;
-    const ids = new Set(
-      products
-        .filter((p) => {
-          const ot = p.categories?.order_type ?? catOrderTypeMap[p.category_id] ?? 'WEEKLY_FOOD';
-          return ot === prodTypeFilter;
-        })
-        .map((p) => p.vendor_id)
-    );
-    return vendors.filter((v) => ids.has(v.id));
-  }, [vendors, products, prodTypeFilter, catOrderTypeMap]);
-
-  // ── Categories filtered for current type filter ────────────────────────────
-  const categoryPills = useMemo(() => {
+  const filteredCategories = useMemo(() => {
     if (prodTypeFilter === 'ALL') return categories;
     return categories.filter((c) => (c.order_type ?? 'WEEKLY_FOOD') === prodTypeFilter);
   }, [categories, prodTypeFilter]);
 
-  // ── Filtered product list ──────────────────────────────────────────────────
-  const filteredProducts = products.filter((p) => {
-    if (prodSearch && !p.name.toLowerCase().includes(prodSearch.toLowerCase())) return false;
-    if (prodCategoryFilter !== 'ALL' && p.category_id !== prodCategoryFilter) return false;
-    if (prodVendorFilter !== 'ALL' && p.vendor_id !== prodVendorFilter) return false;
-    if (prodTypeFilter !== 'ALL') {
-      const ot = p.categories?.order_type ?? catOrderTypeMap[p.category_id] ?? 'WEEKLY_FOOD';
-      if (ot !== prodTypeFilter) return false;
-    }
-    return true;
-  });
+  const filteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      if (prodSearch && !p.name.toLowerCase().includes(prodSearch.toLowerCase())) return false;
+      if (prodCategoryFilter !== 'ALL' && p.category_id !== prodCategoryFilter) return false;
+      if (prodVendorFilter !== 'ALL' && p.vendor_id !== prodVendorFilter) return false;
+      if (prodTypeFilter !== 'ALL') {
+        const catObj = Array.isArray(p.categories) ? p.categories[0] : p.categories;
+        const ot = catObj?.order_type || catOrderTypeMap[p.category_id] || 'WEEKLY_FOOD';
+        if (ot !== prodTypeFilter) return false;
+      }
+      return true;
+    });
+  }, [products, prodSearch, prodCategoryFilter, prodVendorFilter, prodTypeFilter, catOrderTypeMap]);
 
-  // ── Group products: order_type → {catSortOrder, products[]} ───────────────
   const groupedProducts = useMemo(() => {
     const typeOrder: OrderType[] = ['WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'];
     const groups: Record<string, { catName: string; catSortOrder: number; products: Product[] }[]> = {};
 
+    const limitedProducts = filteredProducts.slice(0, displayCount);
+
     typeOrder.forEach((ot) => {
-      const forType = filteredProducts.filter((p) => {
-        const pot = p.categories?.order_type ?? catOrderTypeMap[p.category_id] ?? 'WEEKLY_FOOD';
+      const forType = limitedProducts.filter((p) => {
+        const catObj = Array.isArray(p.categories) ? p.categories[0] : p.categories;
+        const pot = catObj?.order_type || catOrderTypeMap[p.category_id] || 'WEEKLY_FOOD';
         return pot === ot;
       });
       if (forType.length === 0) return;
 
       const byCategory: Record<string, { catName: string; catSortOrder: number; products: Product[] }> = {};
       forType.forEach((p) => {
-        const catName = p.categories?.name ?? 'Uncategorized';
+        const catObj = Array.isArray(p.categories) ? p.categories[0] : p.categories;
+        const catName = catObj?.name ?? 'Uncategorized';
         if (!byCategory[catName]) {
-          byCategory[catName] = { catName, catSortOrder: p.categories?.sort_order ?? 99, products: [] };
+          byCategory[catName] = { catName, catSortOrder: catObj?.sort_order ?? 99, products: [] };
         }
         byCategory[catName].products.push(p);
       });
@@ -536,566 +428,345 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
     });
 
     return groups;
-  }, [filteredProducts, catOrderTypeMap]);
+  }, [filteredProducts, catOrderTypeMap, displayCount]);
 
   const totalFilteredCount = filteredProducts.length;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50 animate-fadeIn flex flex-col">
-      <BrandHeader
-        onBack={onBack}
-        title="Inventory Manager"
-        subtitle={activeTab === 'orders' ? `${filteredOrders.length} orders` : `${totalFilteredCount} products`}
-        action={
-          activeTab === 'orders' ? (
-            <button
-              onClick={() => {
-                if (typeFilter !== 'ALL') { onCreateOrder(typeFilter as OrderType); }
-                else { setShowTypePickerFor(true); }
-              }}
-              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border border-white/20"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-              New Order
+    <div className="flex flex-col h-full bg-slate-50 relative">
+      <div className="bg-ibg-600 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-40 shadow-md">
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button onClick={onBack} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-xl transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
             </button>
-          ) : (
+          )}
+          <div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={toggleBulkEditMode}
-                className={`hidden lg:flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border ${bulkEditMode
-                  ? 'bg-amber-400 text-amber-900 hover:bg-amber-300 border-amber-300'
-                  : 'bg-white/20 hover:bg-white/30 text-white border-white/20'
-                  }`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                {bulkEditMode ? 'Exit Bulk' : 'Bulk Edit'}
-              </button>
-              <button
-                onClick={() => { setShowAddForm((v) => !v); setAddError(null); }}
-                className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-colors border border-white/20"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                Add Product
-              </button>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-80"><path d="M5 22h14" /><path d="M5 2h14" /><path d="M17 22V2" /><path d="M7 22V2" /><path d="M7 4h10" /><path d="M7 8h10" /><path d="M7 12h10" /><path d="M7 16h10" /><path d="M7 20h10" /></svg>
+              <h1 className="font-black tracking-tight text-lg">Inventory Manager</h1>
             </div>
-          )
-        }
-      />
-
-      {/* Tab Bar */}
-      <div className="flex bg-white border-b border-slate-100 px-4 gap-1 shrink-0">
-        {(['orders', 'products'] as ActiveTab[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`py-3 px-5 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${activeTab === tab
-              ? 'border-ibg-600 text-ibg-600'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-              }`}
-          >
-            {tab === 'orders' ? 'Orders' : 'Products'}
-          </button>
-        ))}
+          </div>
+        </div>
       </div>
 
-      {/* ── ORDERS TAB ─────────────────────────────────────────────────────── */}
-      {activeTab === 'orders' && (
-        <div className="flex-1">
-          {/* Type filter */}
-          <div className="px-4 pt-4 pb-2 flex gap-2 overflow-x-auto bg-white border-b border-slate-50">
-            {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as OrderTypeFilter[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTypeFilter(t)}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${typeFilter === t
-                  ? 'bg-ibg-600 text-white border-ibg-600'
-                  : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                  }`}
-              >
-                {t === 'ALL' ? 'All Orders' : `${ORDER_TYPE_ICONS[t]} ${ORDER_TYPE_LABELS[t as OrderType]}`}
-              </button>
-            ))}
-          </div>
+      {/* ── Tabs ── */}
+      <div className="flex border-b border-slate-200 bg-white sticky top-[52px] z-30 px-4 pt-4 shrink-0">
+        <button
+          onClick={() => setActiveTab('orders')}
+          className={`px-4 pb-3 text-xs font-black uppercase tracking-widest transition-all relative ${activeTab === 'orders' ? 'text-ibg-600' : 'text-slate-400 hover:text-slate-600'
+            }`}
+        >
+          Orders
+          {activeTab === 'orders' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-ibg-500 rounded-t-full"></div>}
+        </button>
+        <button
+          onClick={() => setActiveTab('products')}
+          className={`px-4 pb-3 text-xs font-black uppercase tracking-widest transition-all relative ${activeTab === 'products' ? 'text-ibg-600' : 'text-slate-400 hover:text-slate-600'
+            }`}
+        >
+          Products
+          {activeTab === 'products' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-ibg-500 rounded-t-full"></div>}
+        </button>
+      </div>
 
-          {/* Type picker modal */}
-          {showTypePickerFor && (
-            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowTypePickerFor(false)}>
-              <div className="w-full max-w-2xl bg-white rounded-t-3xl p-6 space-y-3" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-1 h-5 bg-ibg-600 rounded-full"></div>
-                  <h2 className="text-base font-black text-slate-900 uppercase tracking-widest">Select Order Type</h2>
+      {activeTab === 'orders' ? (
+        <div className="flex-1 overflow-auto p-4">
+          <div className="max-w-4xl mx-auto space-y-4">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-4">
+              <h2 className="text-xl font-bold bg-gradient-to-r from-slate-800 to-slate-500 bg-clip-text text-transparent">Order History</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap bg-black/20 border border-white/5 p-1 rounded-xl shadow-inner gap-1">
+                  {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as const).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setTypeFilter(f)}
+                      className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${typeFilter === f ? 'bg-ibg-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
+                    >
+                      {f === 'ALL' ? 'All Types' : f === 'WEEKLY_FOOD' ? 'Weekly Food' : f}
+                    </button>
+                  ))}
                 </div>
-                {(['WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as OrderType[]).map((t) => (
+                {isSuperAdmin() && (
                   <button
-                    key={t}
-                    onClick={() => { setShowTypePickerFor(false); onCreateOrder(t); }}
-                    className="w-full flex items-center gap-4 bg-slate-50 hover:bg-ibg-50 border border-slate-100 hover:border-ibg-200 rounded-2xl p-4 text-left transition-colors active:scale-[0.98]"
+                    onClick={() => {
+                      if (onCreateOrder) {
+                        onCreateOrder((typeFilter === 'ALL' ? 'WEEKLY_FOOD' : typeFilter) as OrderType);
+                      } else {
+                        onViewOrder({ id: 0, status: 'OPEN', created_at: '', restaurant_id: 0, created_by: '', type: 'WEEKLY_FOOD' }, true);
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-1.5 bg-ibg-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-ibg-700 transition-colors shadow-lg shadow-ibg-100"
                   >
-                    <span className="text-2xl">{ORDER_TYPE_ICONS[t]}</span>
-                    <div className="flex-1">
-                      <p className="font-black text-slate-800 text-sm">{ORDER_TYPE_LABELS[t]}</p>
-                      <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-0.5">
-                        {t === 'WEEKLY_FOOD' ? 'Food & produce orders' : t === 'BAR' ? 'Bar & beverage orders' : t === 'IBG Products' ? 'IBG direct orders' : 'IBG glassware & crockery orders'}
-                      </p>
-                    </div>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300"><path d="m9 18 6-6-6-6" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                    New Order
                   </button>
-                ))}
-                <button onClick={() => setShowTypePickerFor(false)} className="w-full py-3 text-slate-500 text-sm font-bold">Cancel</button>
+                )}
               </div>
             </div>
-          )}
-
-          <div className="p-4 lg:p-6">
-            {deleteOrderError && (
-              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 mb-4 flex items-center justify-between gap-2">
-                <p className="text-rose-700 font-semibold text-xs">{deleteOrderError}</p>
-                <button onClick={() => setDeleteOrderError(null)} className="text-rose-400 hover:text-rose-600">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                </button>
-              </div>
-            )}
 
             {ordersLoading ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-4">
-                <div className="relative">
-                  <div className="w-12 h-12 border-4 border-ibg-100 rounded-full"></div>
-                  <div className="absolute top-0 left-0 w-12 h-12 border-4 border-t-ibg-600 rounded-full animate-spin"></div>
-                </div>
-                <p className="text-slate-400 text-sm font-medium">Loading orders...</p>
+              <div className="flex flex-col items-center justify-center py-20 animate-in fade-in slide-in-from-bottom-4">
+                <div className="w-12 h-12 border-4 border-ibg-100 border-t-ibg-500 rounded-full animate-spin mb-4"></div>
+                <p className="text-slate-400 font-bold text-sm">Loading orders...</p>
               </div>
-            ) : ordersError ? (
-              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center">
-                <p className="text-rose-700 font-semibold text-sm">{ordersError}</p>
-                <button onClick={loadOrders} className="mt-3 text-rose-600 text-xs font-bold underline">Try again</button>
-              </div>
-            ) : filteredOrders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
-                <div className="w-16 h-16 bg-ibg-50 rounded-2xl flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#952D34" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 12h6" /><path d="M9 16h4" /></svg>
+            ) : orders.length === 0 ? (
+              <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
+                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.7 8.38 8.38 0 0 1 3.8.9L21 3z" /><path d="M11 15v4h4" /><path d="M15 15l6 6" /></svg>
                 </div>
-                <div>
-                  <p className="text-slate-800 font-bold text-base">
-                    {typeFilter === 'ALL' ? 'No orders yet' : `No ${ORDER_TYPE_LABELS[typeFilter as OrderType]} orders`}
-                  </p>
-                  <p className="text-slate-400 text-sm mt-1">Create your first order to get started</p>
-                </div>
-                <button
-                  onClick={() => typeFilter !== 'ALL' ? onCreateOrder(typeFilter as OrderType) : setShowTypePickerFor(true)}
-                  className="bg-ibg-600 text-white font-bold px-6 py-2.5 rounded-xl hover:bg-ibg-700 transition-colors text-sm"
-                >
-                  Create Order
-                </button>
+                <h3 className="text-lg font-bold text-slate-800 mb-1">No orders yet</h3>
+                <p className="text-slate-400 text-sm max-w-xs mx-auto mb-6">Create your first inventory order to start tracking stock.</p>
+                {isSuperAdmin() && (
+                  <button
+                    onClick={() => {
+                      if (onCreateOrder) {
+                        onCreateOrder('WEEKLY_FOOD');
+                      } else {
+                        onViewOrder({ id: 0, status: 'OPEN', created_at: '', restaurant_id: 0, created_by: '', type: 'WEEKLY_FOOD' }, true);
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-ibg-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-ibg-700 transition-colors shadow-xl shadow-ibg-100"
+                  >
+                    Create First Order
+                  </button>
+                )}
               </div>
             ) : (
-              /* Desktop: wider grid; Mobile: single column */
-              <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-                {filteredOrders.map((order) => {
-                  const otype = (order.order_type ?? 'WEEKLY_FOOD') as OrderType;
-                  const orderId = Number(order.id);
-                  return (
-                    <div key={order.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                      <button
-                        onClick={() => onViewOrder(order)}
-                        className="w-full text-left p-4 hover:bg-slate-50 active:scale-[0.99] transition-all"
-                      >
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-                              <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${STATUS_COLORS[order.status] ?? 'bg-slate-100 text-slate-600'}`}>
-                                {order.status}
-                              </span>
-                              <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${ORDER_TYPE_COLORS[otype] ?? 'bg-slate-100 text-slate-600'}`}>
-                                {ORDER_TYPE_ICONS[otype]} {ORDER_TYPE_LABELS[otype]}
+              <div className="grid grid-cols-1 gap-3">
+                {orders
+                  .filter(o => typeFilter === 'ALL' || o.type === typeFilter)
+                  .map(o => (
+                    <div key={o.id} className="bg-white border border-slate-200 rounded-3xl p-4 hover:shadow-xl hover:border-ibg-200 transition-all duration-300 group">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4 cursor-pointer flex-1 min-w-0" onClick={() => onViewOrder(o)}>
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm group-hover:scale-110 transition-transform ${o.type === 'BAR' ? 'bg-amber-50 text-amber-600' :
+                            o.type === 'IBG Products' ? 'bg-indigo-50 text-indigo-600' :
+                              o.type === 'IBG Crockery' ? 'bg-emerald-50 text-emerald-600' :
+                                'bg-teal-50 text-teal-600'
+                            }`}>
+                            {ORDER_TYPE_ICONS[o.type as OrderType] || '📦'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-bold text-slate-800 truncate">
+                                {o.type === 'WEEKLY_FOOD' ? 'Weekly Food' : o.type === 'BAR' ? 'Bar' : o.type === 'IBG Products' ? 'IBG Products' : o.type === 'IBG Crockery' ? 'IBG Crockery' : 'Weekly Food order'}
+                              </h3>
+                              <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${o.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600' :
+                                o.status === 'DRAFT' ? 'bg-slate-100 text-slate-400' :
+                                  'bg-amber-50 text-amber-600'
+                                }`}>
+                                {o.status}
                               </span>
                             </div>
-                            <p className="text-slate-800 font-bold text-sm">Due: {formatDate(order.due_date)}</p>
-                            {order.submitted_by && (
-                              <p className="text-slate-400 text-xs mt-0.5">By {order.submitted_by}</p>
-                            )}
-                          </div>
-                          <div className="flex flex-col items-end shrink-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              {order.status !== 'DRAFT' && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onViewOrder(order, false, true);
-                                  }}
-                                  className="p-2 rounded-xl bg-slate-900 text-white hover:bg-black transition-all shadow-sm active:scale-90"
-                                  title="Quick Shopping Mode"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" /></svg>
-                                </button>
-                              )}
-                              <div className="text-right">
-                                <p className="text-2xl font-black text-ibg-600 leading-none">{order.line_count ?? 0}</p>
-                                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">items</p>
-                              </div>
-                            </div>
+                            <p className="text-[11px] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">
+                              {new Date(o.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              <span className="mx-2 text-slate-200">|</span>
+                              {o.line_count || 0} items
+                            </p>
                           </div>
                         </div>
-                        {order.notes && (
-                          <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100 mb-2">{order.notes}</p>
-                        )}
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium uppercase tracking-wider pt-2 border-t border-slate-50">
-                          <span>Created {formatDate(order.created_at)}</span>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300"><path d="m9 18 6-6-6-6" /></svg>
-                        </div>
-                      </button>
-
-                      <div className="border-t border-slate-50 px-4 py-2 flex justify-between gap-3 min-h-[44px]">
-                        {confirmDeleteOrderId === orderId && user.role === 'Owner' ? (
-                          <div className="flex items-center gap-2 justify-end w-full">
-                            <span className="text-[11px] text-slate-500 font-semibold">Delete this order?</span>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDeleteOrder(orderId); }}
-                              disabled={deletingOrderId === orderId}
-                              className="text-[11px] font-black uppercase tracking-wider text-rose-600 hover:text-rose-700 disabled:opacity-40 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
-                            >
-                              {deletingOrderId === orderId ? 'Deleting...' : 'Yes, delete'}
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteOrderId(null); }}
-                              className="text-[11px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center w-full justify-end gap-4">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDuplicateOrder(order);
-                              }}
-                              disabled={duplicatingOrderId === orderId}
-                              className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-ibg-600 hover:bg-ibg-50 px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                              {duplicatingOrderId === orderId ? 'Copying...' : 'Duplicate'}
-                            </button>
-
-                            {user.role === 'Owner' && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleDuplicate(o)}
+                            disabled={duplicatingOrderId === Number(o.id)}
+                            className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-ibg-600 transition-colors"
+                            title="Duplicate order"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
+                          </button>
+                          {isSuperAdmin() && (
+                            <div className="relative">
                               <button
-                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteOrderId(orderId); }}
-                                className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
+                                onClick={() => setConfirmDeleteOrderId(confirmDeleteOrderId === Number(o.id) ? null : Number(o.id))}
+                                className="p-2.5 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors"
+                                title="Delete order"
                               >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                                Delete
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
                               </button>
-                            )}
-                          </div>
-                        )}
+                              {confirmDeleteOrderId === Number(o.id) && (
+                                <div className="absolute right-0 bottom-full mb-2 bg-white border border-slate-200 rounded-2xl p-3 shadow-2xl z-50 w-48 animate-in zoom-in-95 overflow-hidden">
+                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 text-center">Delete this order?</p>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => handleDeleteOrder(Number(o.id))}
+                                      disabled={deletingOrderId === Number(o.id)}
+                                      className="flex-1 bg-rose-600 text-white text-[10px] font-black uppercase tracking-widest py-2 rounded-xl hover:bg-rose-700"
+                                    >
+                                      Yes
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmDeleteOrderId(null)}
+                                      className="flex-1 bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest py-2 rounded-xl hover:bg-slate-200"
+                                    >
+                                      No
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
               </div>
             )}
           </div>
         </div>
-      )}
-
-      {/* ── PRODUCTS TAB ───────────────────────────────────────────────────── */}
-      {activeTab === 'products' && (
-        <div className="flex-1 flex flex-col lg:flex-row">
-          {/* ── Sidebar: filters + search (desktop left panel) ── */}
-          <div className="bg-white border-b lg:border-b-0 lg:border-r border-slate-100 lg:w-72 xl:w-80 lg:shrink-0 lg:sticky lg:top-[120px] lg:self-start lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto">
-            <div className="p-4 space-y-4">
-              {/* Search */}
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Search</label>
-                <div className="relative">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                  <input
-                    type="text"
-                    placeholder="Product name..."
-                    value={prodSearch}
-                    onChange={(e) => setProdSearch(e.target.value)}
-                    className="w-full border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-slate-700 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
-                  />
-                  {prodSearch && (
-                    <button onClick={() => setProdSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                    </button>
-                  )}
-                </div>
+      ) : (
+        /* ── Products Tab ── */
+        <div className="flex-1 flex flex-col min-h-0 bg-slate-50">
+          {/* Products Filter Bar */}
+          <div className="p-4 bg-white border-b border-slate-200 shadow-sm sticky top-[49px] z-20">
+            <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-4">
+              <div className="flex-1 relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={prodSearch}
+                  onChange={(e) => setProdSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 transition-all font-medium"
+                />
               </div>
-
-              {/* Order Type Filter */}
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Order Type</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as OrderTypeFilter[]).map((t) => (
+              <div className="flex flex-wrap lg:flex-row items-center gap-2">
+                <div className="flex flex-wrap bg-black/20 border border-white/5 p-1 rounded-xl shadow-inner gap-1 w-full xl:w-auto">
+                  {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as const).map(f => (
                     <button
-                      key={t}
-                      onClick={() => { setProdTypeFilter(t); setProdCategoryFilter('ALL'); setProdVendorFilter('ALL'); }}
-                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-colors ${prodTypeFilter === t
-                        ? 'bg-ibg-600 text-white border-ibg-600'
-                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                        }`}
+                      key={f}
+                      onClick={() => { setProdTypeFilter(f); setProdCategoryFilter('ALL'); }}
+                      className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${prodTypeFilter === f ? 'bg-ibg-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
                     >
-                      {t === 'ALL' ? 'All' : `${ORDER_TYPE_ICONS[t]} ${ORDER_TYPE_LABELS[t as OrderType]}`}
+                      {f === 'ALL' ? 'All Types' : f === 'WEEKLY_FOOD' ? 'Weekly Food' : f}
                     </button>
                   ))}
                 </div>
-              </div>
+                <select
+                  value={prodCategoryFilter}
+                  onChange={(e) => setProdCategoryFilter(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
+                  className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-ibg-400"
+                >
+                  <option value="ALL">All Categories</option>
+                  {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <select
+                  value={prodVendorFilter}
+                  onChange={(e) => setProdVendorFilter(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
+                  className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-ibg-400"
+                >
+                  <option value="ALL">All Vendors</option>
+                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
 
-              {/* Vendor Filter — scoped to selected order type */}
-              {vendorsForType.length > 0 && (
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">
-                    Vendor
-                    {prodTypeFilter !== 'ALL' && (
-                      <span className="ml-1 text-ibg-400 normal-case font-medium">(filtered)</span>
-                    )}
-                  </label>
-                  <select
-                    value={prodVendorFilter}
-                    onChange={(e) => setProdVendorFilter(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
-                  >
-                    <option value="ALL">All Vendors</option>
-                    {vendorsForType.map((v) => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Category Filter */}
-              {categoryPills.length > 0 && (
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Category</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() => setProdCategoryFilter('ALL')}
-                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-colors ${prodCategoryFilter === 'ALL'
-                        ? 'bg-slate-700 text-white border-slate-700'
-                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                        }`}
-                    >
-                      All
-                    </button>
-                    {categoryPills.map((c) => (
+                <div className="flex items-center gap-2 ml-auto">
+                  {isSuperAdmin() && (
+                    <>
                       <button
-                        key={c.id}
-                        onClick={() => setProdCategoryFilter(c.id)}
-                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-colors ${prodCategoryFilter === c.id
-                          ? 'bg-slate-700 text-white border-slate-700'
-                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                        onClick={toggleBulkEditMode}
+                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-sm ${bulkEditMode
+                          ? 'bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                           }`}
                       >
-                        {c.name}
+                        {bulkEditMode ? 'Cancel Bulk' : 'Bulk Edit'}
                       </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Active filter summary */}
-              {(prodSearch || prodTypeFilter !== 'ALL' || prodCategoryFilter !== 'ALL' || prodVendorFilter !== 'ALL') && (
-                <button
-                  onClick={() => { setProdSearch(''); setProdTypeFilter('ALL'); setProdCategoryFilter('ALL'); setProdVendorFilter('ALL'); }}
-                  className="w-full text-[11px] font-bold text-ibg-600 hover:text-ibg-700 py-2 border border-ibg-200 rounded-xl hover:bg-ibg-50 transition-colors"
-                >
-                  Clear all filters
-                </button>
-              )}
-
-              {/* Bulk Edit panel (desktop only) */}
-              {bulkEditMode && (
-                <div className="hidden lg:block mt-2 p-3 bg-amber-50 border border-amber-200 rounded-2xl space-y-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Bulk Edit Mode</p>
-                  <p className="text-[11px] text-amber-600 font-medium">Check products in the list to edit them simultaneously. Changes save when you click "Save Changes".</p>
-                  {bulkSelected.size > 0 && (
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-amber-800">{bulkSelected.size} selected</span>
-                        <button
-                          onClick={() => { setBulkSelected(new Set()); setBulkEdits({}); }}
-                          className="text-[10px] font-bold text-amber-600 hover:text-amber-800 underline"
-                        >
-                          Clear
-                        </button>
-                      </div>
                       <button
-                        onClick={handleSaveBulk}
-                        disabled={bulkSaving}
-                        className="w-full bg-amber-500 hover:bg-amber-600 text-white font-black text-[11px] uppercase tracking-widest py-2.5 rounded-xl disabled:opacity-50 transition-colors"
+                        onClick={() => setShowAddForm(!showAddForm)}
+                        className="flex items-center gap-2 px-4 py-2 bg-ibg-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-ibg-700 transition-colors shadow-lg shadow-ibg-100"
                       >
-                        {bulkSaving ? 'Saving...' : `Save ${bulkSelected.size} Product${bulkSelected.size !== 1 ? 's' : ''}`}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                        Add Product
                       </button>
-                      {bulkError && (
-                        <p className="text-[11px] text-rose-600 font-semibold">{bulkError}</p>
-                      )}
-                      {bulkSaveResults && bulkSaveResults.saved > 0 && (
-                        <p className="text-[11px] text-emerald-700 font-semibold">✓ {bulkSaveResults.saved} saved</p>
-                      )}
-                    </div>
+                    </>
                   )}
-                  <button
-                    onClick={selectAllVisible}
-                    className="w-full text-[10px] font-bold text-amber-700 hover:text-amber-900 py-1.5 border border-amber-300 rounded-xl hover:bg-amber-100 transition-colors"
-                  >
-                    Select all visible ({filteredProducts.length})
-                  </button>
                 </div>
-              )}
+              </div>
             </div>
           </div>
 
-          {/* ── Main product area ── */}
-          <div className="flex-1 p-4 lg:p-6 min-w-0">
-            {/* Add Product Form */}
-            {showAddForm && (
-              <div className="bg-white rounded-2xl border-2 border-ibg-200 shadow-sm p-5 mb-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-1 h-5 bg-ibg-600 rounded-full"></div>
-                  <h3 className="text-sm font-black uppercase tracking-widest text-ibg-700">Add New Product</h3>
-                </div>
-                {addError && (
-                  <p className="text-rose-600 text-xs font-semibold bg-rose-50 rounded-xl px-4 py-2.5 border border-rose-100">{addError}</p>
-                )}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div className="sm:col-span-2 lg:col-span-1">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Name *</label>
-                    <input
-                      type="text"
-                      placeholder="Product name"
-                      value={addForm.name}
-                      onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
-                      autoFocus
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Category *</label>
-                    <select
-                      value={addForm.category_id}
-                      onChange={(e) => setAddForm((f) => ({ ...f, category_id: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
-                    >
-                      <option value="">Select category</option>
-                      {(prodTypeFilter === 'ALL' ? categories : categoryPills).map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">
-                      Vendor *
-                      {prodTypeFilter !== 'ALL' && <span className="ml-1 text-ibg-400 normal-case font-medium">(filtered)</span>}
-                    </label>
-                    <select
-                      value={addForm.vendor_id}
-                      onChange={(e) => setAddForm((f) => ({ ...f, vendor_id: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 bg-white"
-                    >
-                      <option value="">Select vendor</option>
-                      {vendorsForType.map((v) => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Unit *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. lbs, pcs, case"
-                      value={addForm.unit}
-                      onChange={(e) => setAddForm((f) => ({ ...f, unit: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Min Order</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="Optional"
-                      value={addForm.min_order}
-                      onChange={(e) => setAddForm((f) => ({ ...f, min_order: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Notes (optional)</label>
-                    <input
-                      type="text"
-                      placeholder="Additional notes"
-                      value={addForm.notes}
-                      onChange={(e) => setAddForm((f) => ({ ...f, notes: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={handleAddProduct}
-                    disabled={addSaving}
-                    className="flex-1 bg-ibg-600 text-white font-black text-xs uppercase tracking-widest py-3 rounded-xl hover:bg-ibg-700 disabled:opacity-50 transition-colors"
-                  >
-                    {addSaving ? 'Saving...' : 'Save Product'}
-                  </button>
-                  <button
-                    onClick={() => { setShowAddForm(false); setAddError(null); setAddForm(EMPTY_FORM); }}
-                    className="flex-1 bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-widest py-3 rounded-xl hover:bg-slate-200 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Loading / Error / Empty */}
+          <div className="flex-1 overflow-auto min-h-0">
             {prodLoading ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-4">
-                <div className="relative">
-                  <div className="w-12 h-12 border-4 border-ibg-100 rounded-full"></div>
-                  <div className="absolute top-0 left-0 w-12 h-12 border-4 border-t-ibg-600 rounded-full animate-spin"></div>
+              <div className="flex flex-col items-center justify-center py-24">
+                <div className="w-12 h-12 border-4 border-slate-100 border-t-ibg-500 rounded-full animate-spin mb-4"></div>
+                <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.2em] animate-pulse">Scanning Inventory...</p>
+              </div>
+            ) : totalFilteredCount === 0 ? (
+              <div className="bg-white m-4 border-2 border-dashed border-slate-200 rounded-[32px] p-20 text-center">
+                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3" /><path d="m21 12-1 8H5l-1-8" /><path d="M10 12h4" /><path d="M12 3v9" /></svg>
                 </div>
-                <p className="text-slate-400 text-sm font-medium">Loading products...</p>
-              </div>
-            ) : prodError ? (
-              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center">
-                <p className="text-rose-700 font-semibold text-sm">{prodError}</p>
-                <button onClick={loadProducts} className="mt-3 text-rose-600 text-xs font-bold underline">Try again</button>
-              </div>
-            ) : Object.keys(groupedProducts).length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
-                <div className="w-14 h-14 bg-ibg-50 rounded-2xl flex items-center justify-center text-2xl">📦</div>
-                <p className="text-slate-700 font-bold text-sm">No products found</p>
-                <p className="text-slate-400 text-xs">Try a different filter or add a new product</p>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">No items found</h3>
+                <p className="text-slate-400 text-sm max-w-sm mx-auto">We couldn't find any products matching your current filters or search term.</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {(['WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as OrderType[])
-                  .filter((ot) => groupedProducts[ot]?.length)
-                  .map((ot) => {
-                    const headerCls = ORDER_TYPE_HEADER_COLORS[ot];
-                    const badgeCls = ORDER_TYPE_BADGE_COLORS[ot];
-                    const typeLabel = { WEEKLY_FOOD: 'Weekly Food', BAR: 'Bar & Front of House', 'IBG Products': 'IBG Order', 'IBG Crockery': 'IBG Crockery' }[ot];
+              <div className="max-w-6xl mx-auto h-full p-4 lg:p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Showing {Math.min(displayCount, totalFilteredCount)} of {totalFilteredCount} matching items
+                  </p>
+                </div>
+
+                {showAddForm && (
+                  <div className="bg-white border-2 border-ibg-200 rounded-3xl p-6 mb-8 shadow-lg shadow-ibg-100/50">
+                    <h3 className="text-lg font-bold text-slate-800 mb-4">Add New Product</h3>
+                    {addError && <p className="text-xs text-rose-500 font-semibold mb-4 bg-rose-50 px-3 py-2 rounded-xl border border-rose-100">{addError}</p>}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-5">
+                      <div className="lg:col-span-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Name <span className="text-rose-500">*</span></label>
+                        <input type="text" value={addForm.name} onChange={(e) => setAddForm(f => ({ ...f, name: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-ibg-400 font-medium" placeholder="E.g. Basmati Rice" />
+                      </div>
+                      <div className="lg:col-span-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Category <span className="text-rose-500">*</span></label>
+                        <select value={addForm.category_id} onChange={(e) => setAddForm(f => ({ ...f, category_id: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-ibg-400 font-semibold bg-slate-50">
+                          <option value="">Select...</option>
+                          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="lg:col-span-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Vendor <span className="text-rose-500">*</span></label>
+                        <select value={addForm.vendor_id} onChange={(e) => setAddForm(f => ({ ...f, vendor_id: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-ibg-400 font-semibold bg-slate-50">
+                          <option value="">Select...</option>
+                          {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="lg:col-span-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Unit <span className="text-rose-500">*</span></label>
+                        <input type="text" value={addForm.unit} onChange={(e) => setAddForm(f => ({ ...f, unit: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-ibg-400 font-medium" placeholder="e.g. lbs, cs" />
+                      </div>
+                      <div className="lg:col-span-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 block">Min Order</label>
+                        <input type="number" min="0" value={addForm.min_order} onChange={(e) => setAddForm(f => ({ ...f, min_order: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-ibg-400 font-medium" placeholder="Optional" />
+                      </div>
+                    </div>
+                    <div className="flex gap-3 justify-end">
+                      <button onClick={() => { setShowAddForm(false); setAddForm(EMPTY_FORM); setAddError(null); }} className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-xs uppercase tracking-widest rounded-xl transition-colors">Cancel</button>
+                      <button onClick={handleSaveAdd} disabled={addSaving} className="px-6 py-2.5 bg-ibg-600 hover:bg-ibg-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg shadow-ibg-100 disabled:opacity-50 transition-colors">{addSaving ? 'Saving...' : 'Save Product'}</button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-8 pb-32">
+                  {Object.entries(groupedProducts).map(([ot, catGroups]) => {
+                    const typeLabel = ot === 'WEEKLY_FOOD' ? 'Weekly Food' : ot;
+                    const badgeCls = ot === 'BAR' ? 'bg-purple-600 text-white' :
+                      ot === 'IBG Products' ? 'bg-indigo-600 text-white' :
+                        ot === 'IBG Crockery' ? 'bg-emerald-600 text-white' :
+                          'bg-teal-600 text-white';
 
                     return (
-                      <div key={ot} className="rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                        {/* Section header */}
-                        <div className={`${headerCls} px-4 py-3 flex items-center justify-between`}>
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">{ORDER_TYPE_ICONS[ot]}</span>
+                      <div key={ot} className="overflow-hidden rounded-[32px] border border-slate-200 shadow-sm bg-white">
+                        <div className={`px-6 py-4 flex items-center justify-between ${badgeCls}`}>
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg">{ORDER_TYPE_ICONS[ot as OrderType]}</span>
                             <span className="text-white font-black text-sm uppercase tracking-widest">{typeLabel}</span>
                           </div>
                           <span className="text-white/70 text-[10px] font-bold uppercase tracking-wider">
-                            {groupedProducts[ot].reduce((sum, g) => sum + g.products.length, 0)} items
+                            {catGroups.reduce((sum, g) => sum + g.products.length, 0)} items
                           </span>
                         </div>
 
-                        {/* ── Desktop: table layout | Mobile: card rows ── */}
                         <div className="bg-white">
-                          {/* Desktop column headers */}
                           <div className={`hidden lg:grid gap-3 px-4 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400 ${bulkEditMode ? 'lg:grid-cols-[28px,1fr,160px,160px,80px,100px]' : 'lg:grid-cols-[1fr,160px,160px,80px,100px]'}`}>
                             {bulkEditMode && (
                               <button
@@ -1113,21 +784,17 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                             <span className="text-right">Actions</span>
                           </div>
 
-                          {groupedProducts[ot].map((catGroup) => (
+                          {catGroups.map((catGroup) => (
                             <div key={catGroup.catName}>
-                              {/* Category sub-header (mobile only) */}
-                              <div className={`lg:hidden px-4 py-2 ${badgeCls.replace('bg-', 'bg-').replace('text-', '')} bg-opacity-20 border-y border-slate-100 flex items-center justify-between`}
-                                style={{ backgroundColor: ot === 'WEEKLY_FOOD' ? '#f0fdfa' : ot === 'BAR' ? '#faf5ff' : '#eef2ff' }}>
+                              <div className="lg:hidden px-4 py-2 bg-black/20 border-y border-white/5 flex items-center justify-between">
                                 <span className="text-[11px] font-black uppercase tracking-widest text-slate-600">{catGroup.catName}</span>
                                 <span className="text-[10px] font-medium text-slate-400">{catGroup.products.length}</span>
                               </div>
-                              {/* Desktop: show category as a label in the row */}
 
                               <div className="divide-y divide-slate-50">
                                 {catGroup.products.map((p) => (
                                   <div key={p.id} className={`${!p.is_active ? 'opacity-50' : ''}`}>
                                     {editingId === p.id ? (
-                                      /* ── Edit Mode ── */
                                       <div className="p-4 bg-ibg-50/30 border-l-4 border-ibg-400">
                                         <p className="text-[10px] font-black uppercase tracking-widest text-ibg-600 mb-3">Editing: {p.name}</p>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
@@ -1137,7 +804,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                                               type="text"
                                               value={editForm.name}
                                               onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
-                                              className="w-full border border-ibg-200 rounded-xl px-3 py-2 text-slate-800 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
+                                              className="w-full border border-slate-200 rounded-xl px-2 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
                                             />
                                           </div>
                                           <div>
@@ -1169,32 +836,7 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                                               className="w-full border border-slate-200 rounded-xl px-2 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
                                             />
                                           </div>
-                                          <div>
-                                            <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Min Order</label>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              step="any"
-                                              value={editForm.min_order}
-                                              onChange={(e) => setEditForm((f) => ({ ...f, min_order: e.target.value }))}
-                                              placeholder="Optional"
-                                              className="w-full border border-slate-200 rounded-xl px-2 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
-                                            />
-                                          </div>
                                         </div>
-                                        <div className="mb-3">
-                                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Notes</label>
-                                          <input
-                                            type="text"
-                                            value={editForm.notes}
-                                            onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
-                                            placeholder="Optional notes"
-                                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400"
-                                          />
-                                        </div>
-                                        {editError && (
-                                          <p className="text-rose-600 text-xs font-semibold mb-2">{editError}</p>
-                                        )}
                                         <div className="flex gap-2">
                                           <button
                                             onClick={() => handleSaveEdit(p.id)}
@@ -1212,113 +854,59 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                                         </div>
                                       </div>
                                     ) : (
-                                      /* ── View Mode ── */
                                       <>
-                                        {/* Mobile view */}
                                         <div className="lg:hidden flex items-start gap-3 p-4">
                                           <div className="flex-1 min-w-0">
                                             <p className="font-bold text-sm text-slate-800 leading-tight">{p.name}</p>
                                             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                                              {p.vendors?.name && (
-                                                <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
-                                                  {p.vendors.name}
-                                                </span>
-                                              )}
+                                              {(() => {
+                                                const vObj = Array.isArray(p.vendors) ? p.vendors[0] : p.vendors;
+                                                return vObj?.name && (
+                                                  <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{vObj.name}</span>
+                                                );
+                                              })()}
                                               <span className="text-[10px] text-slate-400 font-medium">{p.unit}</span>
-                                              {!p.is_active && (
-                                                <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">Inactive</span>
-                                              )}
+                                              {!p.is_active && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">Inactive</span>}
                                             </div>
-                                            {p.notes && <p className="text-[11px] text-slate-400 mt-1">{p.notes}</p>}
                                           </div>
                                           <div className="flex items-center gap-1 shrink-0">
-                                            <button onClick={() => startEdit(p)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors" title="Edit">
+                                            <button onClick={() => startEdit(p)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600">
                                               <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                             </button>
-                                            {p.is_active ? (
-                                              <button onClick={() => handleDelete(p.id)} disabled={deletingId === p.id} className="p-2 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors disabled:opacity-40" title="Deactivate">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                                              </button>
-                                            ) : (
-                                              <button onClick={() => handleReactivate(p.id)} disabled={deletingId === p.id} className="p-2 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors disabled:opacity-40" title="Reactivate">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
-                                              </button>
-                                            )}
                                           </div>
                                         </div>
 
-                                        {/* Desktop table row */}
                                         {bulkEditMode && bulkSelected.has(p.id) ? (
-                                          /* ── Bulk Edit Row ── */
-                                          <div className={`hidden lg:grid gap-2 items-start px-4 py-2.5 bg-amber-50/50 border-l-2 border-amber-400 ${bulkEditMode ? 'lg:grid-cols-[28px,1fr,160px,160px,80px,100px]' : 'lg:grid-cols-[1fr,160px,160px,80px,100px]'}`}>
+                                          <div className={`hidden lg:grid gap-2 items-start px-4 py-2.5 bg-amber-50/50 border-l-2 border-amber-400 lg:grid-cols-[28px,1fr,160px,160px,80px,100px]`}>
                                             <div className="flex items-center justify-center pt-2">
-                                              <input
-                                                type="checkbox"
-                                                checked
-                                                onChange={() => toggleBulkSelect(p)}
-                                                className="w-4 h-4 accent-amber-500 cursor-pointer"
-                                              />
+                                              <input type="checkbox" checked onChange={() => toggleBulkSelect(p)} className="w-4 h-4 accent-amber-500 cursor-pointer" />
                                             </div>
-                                            <input
-                                              type="text"
-                                              value={bulkEdits[p.id]?.name ?? p.name}
-                                              onChange={(e) => updateBulkEdit(p.id, 'name', e.target.value)}
-                                              className="border border-amber-300 rounded-lg px-2 py-1.5 text-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white w-full"
-                                              placeholder="Name"
-                                            />
-                                            <select
-                                              value={bulkEdits[p.id]?.vendor_id ?? String(p.vendor_id)}
-                                              onChange={(e) => updateBulkEdit(p.id, 'vendor_id', e.target.value)}
-                                              className="border border-amber-300 rounded-lg px-2 py-1.5 text-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white w-full"
-                                            >
-                                              {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                                            </select>
-                                            <select
-                                              value={bulkEdits[p.id]?.category_id ?? String(p.category_id)}
-                                              onChange={(e) => updateBulkEdit(p.id, 'category_id', e.target.value)}
-                                              className="border border-amber-300 rounded-lg px-2 py-1.5 text-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white w-full"
-                                            >
-                                              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                            </select>
-                                            <input
-                                              type="text"
-                                              value={bulkEdits[p.id]?.unit ?? p.unit}
-                                              onChange={(e) => updateBulkEdit(p.id, 'unit', e.target.value)}
-                                              className="border border-amber-300 rounded-lg px-2 py-1.5 text-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white w-full"
-                                              placeholder="Unit"
-                                            />
-                                            <div className="flex items-center justify-end gap-1 pt-1">
-                                              <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">editing</span>
-                                            </div>
+                                            <input type="text" value={bulkEdits[p.id]?.name ?? p.name} onChange={(e) => updateBulkEdit(p.id, 'name', e.target.value)} className="border border-amber-300 rounded-lg px-2 py-1.5 text-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white w-full" placeholder="Name" />
+                                            <select value={bulkEdits[p.id]?.vendor_id ?? String(p.vendor_id)} onChange={(e) => updateBulkEdit(p.id, 'vendor_id', e.target.value)} className="border border-amber-300 rounded-lg px-2 py-1.5 text-slate-700 text-xs font-semibold bg-white w-full">{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select>
+                                            <select value={bulkEdits[p.id]?.category_id ?? String(p.category_id)} onChange={(e) => updateBulkEdit(p.id, 'category_id', e.target.value)} className="border border-amber-300 rounded-lg px-2 py-1.5 text-slate-700 text-xs font-semibold bg-white w-full">{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                                            <input type="text" value={bulkEdits[p.id]?.unit ?? p.unit} onChange={(e) => updateBulkEdit(p.id, 'unit', e.target.value)} className="border border-amber-300 rounded-lg px-2 py-1.5 text-slate-800 text-xs font-semibold bg-white w-full" placeholder="Unit" />
+                                            <div className="flex items-center justify-end gap-1 pt-1"><span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">editing</span></div>
                                           </div>
                                         ) : (
                                           <div className={`hidden lg:grid gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors ${bulkEditMode ? 'lg:grid-cols-[28px,1fr,160px,160px,80px,100px]' : 'lg:grid-cols-[1fr,160px,160px,80px,100px]'}`}>
                                             {bulkEditMode && (
                                               <div className="flex items-center justify-center">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={bulkSelected.has(p.id)}
-                                                  onChange={() => toggleBulkSelect(p)}
-                                                  className="w-4 h-4 accent-amber-500 cursor-pointer"
-                                                />
+                                                <input type="checkbox" checked={bulkSelected.has(p.id)} onChange={() => toggleBulkSelect(p)} className="w-4 h-4 accent-amber-500 cursor-pointer" />
                                               </div>
                                             )}
                                             <div className="min-w-0">
                                               <p className="font-semibold text-sm text-slate-800 truncate">{p.name}</p>
                                               {p.notes && <p className="text-[11px] text-slate-400 truncate">{p.notes}</p>}
-                                              {!p.is_active && (
-                                                <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">Inactive</span>
-                                              )}
+                                              {!p.is_active && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">Inactive</span>}
                                             </div>
                                             <div className="truncate">
-                                              <span className="text-xs font-semibold text-slate-600">{p.vendors?.name ?? '—'}</span>
+                                              {(() => {
+                                                const vObj = Array.isArray(p.vendors) ? p.vendors[0] : p.vendors;
+                                                return <span className="text-xs font-semibold text-slate-600">{vObj?.name ?? '—'}</span>;
+                                              })()}
                                             </div>
-                                            <div className="truncate">
-                                              <span className="text-xs text-slate-500">{catGroup.catName}</span>
-                                            </div>
-                                            <div>
-                                              <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">{p.unit}</span>
-                                            </div>
+                                            <div className="truncate"><span className="text-xs text-slate-500">{catGroup.catName}</span></div>
+                                            <div><span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">{p.unit}</span></div>
                                             <div className="flex items-center gap-1 justify-end">
                                               {!bulkEditMode && (
                                                 <button onClick={() => startEdit(p)} className="p-1.5 rounded-lg hover:bg-ibg-50 text-slate-400 hover:text-ibg-600 transition-colors" title="Edit">
@@ -1326,21 +914,16 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                                                 </button>
                                               )}
                                               {p.is_active ? (
-                                                <button onClick={() => handleDelete(p.id)} disabled={deletingId === p.id} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors disabled:opacity-40" title="Deactivate">
+                                                <button onClick={() => handleDelete(p.id)} disabled={deletingId === p.id} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors" title="Deactivate">
                                                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                                                 </button>
                                               ) : (
-                                                <button onClick={() => handleReactivate(p.id)} disabled={deletingId === p.id} className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors disabled:opacity-40" title="Reactivate">
+                                                <button onClick={() => handleReactivate(p.id)} disabled={deletingId === p.id} className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors" title="Reactivate">
                                                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
                                                 </button>
                                               )}
                                               {bulkEditMode && (
-                                                <button
-                                                  onClick={() => toggleBulkSelect(p)}
-                                                  className="text-[10px] font-bold text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-lg transition-colors"
-                                                >
-                                                  Select
-                                                </button>
+                                                <button onClick={() => toggleBulkSelect(p)} className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">Select</button>
                                               )}
                                             </div>
                                           </div>
@@ -1356,50 +939,45 @@ const InventoryManager: React.FC<Props> = ({ user, onCreateOrder, onViewOrder, o
                       </div>
                     );
                   })}
+                </div>
+
+                {filteredProducts.length > displayCount && (
+                  <div className="mt-8 flex justify-center pb-8">
+                    <button
+                      onClick={() => setDisplayCount(prev => prev + 100)}
+                      className="px-6 py-3 bg-white border border-slate-200 rounded-2xl text-slate-600 font-black text-xs uppercase tracking-widest hover:bg-slate-50 shadow-sm"
+                    >
+                      Load More Products ({filteredProducts.length - displayCount} remaining)
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* ── Bulk Edit Floating Save Bar (desktop) ─────────────────────────── */}
       {bulkEditMode && bulkSelected.size > 0 && (
         <div className="hidden lg:flex fixed bottom-0 left-0 right-0 z-40 items-center justify-between gap-4 px-6 py-4 bg-white border-t-2 border-amber-300 shadow-2xl shadow-amber-900/20">
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
-            <p className="text-sm font-black text-slate-800">
-              {bulkSelected.size} product{bulkSelected.size !== 1 ? 's' : ''} selected
-            </p>
-            <span className="text-slate-300">·</span>
-            <p className="text-xs text-slate-500 font-medium">Edit fields inline in the table, then save all at once</p>
-            {bulkError && (
-              <p className="text-xs text-rose-600 font-semibold bg-rose-50 px-3 py-1 rounded-full">{bulkError}</p>
-            )}
-            {bulkSaveResults && bulkSaveResults.saved > 0 && (
-              <p className="text-xs text-emerald-700 font-semibold bg-emerald-50 px-3 py-1 rounded-full">
-                ✓ {bulkSaveResults.saved} saved
-              </p>
-            )}
+            <p className="text-sm font-black text-slate-800">{bulkSelected.size} products selected</p>
+            {bulkError && <p className="text-xs text-rose-600 font-semibold bg-rose-50 px-3 py-1 rounded-full">{bulkError}</p>}
+            {bulkSaveResults && bulkSaveResults.saved > 0 && <p className="text-xs text-emerald-700 font-semibold bg-emerald-50 px-3 py-1 rounded-full">✓ {bulkSaveResults.saved} saved</p>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => { setBulkSelected(new Set()); setBulkEdits({}); setBulkError(null); }}
-              className="text-sm font-bold text-slate-500 hover:text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition-colors"
+              className="text-sm font-bold text-slate-500 hover:text-slate-700 px-4 py-2 rounded-xl"
             >
               Deselect All
             </button>
             <button
-              onClick={toggleBulkEditMode}
-              className="text-sm font-bold text-slate-600 hover:text-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
-            >
-              Exit Bulk Edit
-            </button>
-            <button
               onClick={handleSaveBulk}
               disabled={bulkSaving}
-              className="bg-amber-500 hover:bg-amber-600 text-white font-black text-sm uppercase tracking-widest px-6 py-2.5 rounded-xl disabled:opacity-50 transition-colors shadow-lg shadow-amber-200"
+              className="bg-amber-500 hover:bg-amber-600 text-white font-black text-sm uppercase px-6 py-2 rounded-xl disabled:opacity-50 transition-colors"
             >
-              {bulkSaving ? 'Saving...' : `Save ${bulkSelected.size} Change${bulkSelected.size !== 1 ? 's' : ''}`}
+              {bulkSaving ? 'Saving...' : `Save ${bulkSelected.size} Changes`}
             </button>
           </div>
         </div>

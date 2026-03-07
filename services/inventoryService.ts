@@ -317,3 +317,40 @@ export async function fetchLastOrderedByType(
   }
   return result;
 }
+
+export async function duplicateOrder(orderId: number): Promise<Order> {
+  const { data: order, error: orderErr } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', orderId)
+    .single();
+  if (orderErr) throw new Error(orderErr.message);
+
+  const { id, created_at, updated_at, closed_at, submitted_at, submitted_by, ...rest } = order;
+  const { data: newOrder, error: insertErr } = await supabase
+    .from('orders')
+    .insert({ ...rest, status: 'OPEN' })
+    .select()
+    .single();
+  if (insertErr) throw new Error(insertErr.message);
+  return newOrder as Order;
+}
+
+export async function reactivateProduct(id: number): Promise<void> {
+  const { error } = await supabase
+    .from('products')
+    .update({ is_active: true })
+    .eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function bulkUpdateProducts(
+  updates: { id: number; updates: Partial<Product> }[]
+): Promise<{ id: number; success: boolean }[]> {
+  const results: { id: number; success: boolean }[] = [];
+  for (const { id, updates: data } of updates) {
+    const { error } = await supabase.from('products').update(data).eq('id', id);
+    results.push({ id, success: !error });
+  }
+  return results;
+}

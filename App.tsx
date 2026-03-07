@@ -5,6 +5,7 @@ import { User, UserRole, Transaction, Receipt, CateringEvent, AppState, Restaura
 import { Order, OrderType } from './inventory-types';
 import { dataService } from './services/dataService';
 import { setActiveRestaurantId } from './services/supabaseClient';
+import { isSuperAdmin } from './constants';
 import Dashboard from './components/Dashboard';
 import CashManager from './components/CashManager';
 import ReceiptsManager from './components/ReceiptsManager';
@@ -23,10 +24,6 @@ import AdminPanel from './components/AdminPanel';
 import RequestAccess from './components/RequestAccess';
 
 const SESSION_KEY = 'restohub_session';
-
-// Super-admins have full platform access and can manage restaurants
-const SUPER_ADMIN_EMAILS = new Set(['sri7576@gmail.com', 'Sree.m2608@gmail.com']);
-export const isSuperAdmin = (email: string) => SUPER_ADMIN_EMAILS.has(email);
 
 // Decode a Google JWT credential without a library
 const decodeGoogleJwt = (token: string): Record<string, string> | null => {

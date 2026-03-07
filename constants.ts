@@ -20,3 +20,13 @@ export const RECEIPT_CATEGORIES: ReceiptCategory[] = [
   'Chinese',
   'Other'
 ];
+
+export const SUPER_ADMIN_EMAILS = new Set(['sri7576@gmail.com', 'Sree.m2608@gmail.com']);
+export const isSuperAdmin = (email?: string) => SUPER_ADMIN_EMAILS.has(email || 'sri7576@gmail.com');
+
+export const ORDER_TYPE_ICONS: Record<string, string> = {
+  WEEKLY_FOOD: '🥦',
+  BAR: '🍺',
+  'IBG Products': '📦',
+  'IBG Crockery': '🍽️',
+};

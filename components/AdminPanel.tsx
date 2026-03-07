@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, Restaurant, AccessRequest } from '../types';
+import { isSuperAdmin } from '../constants';
 import { dataService } from '../services/dataService';
 
 interface AdminPanelProps {
@@ -71,6 +72,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         }
       })();
     }
+  }, []);
+
+  useEffect(() => {
+    loadRequests();
   }, []);
 
   useEffect(() => {
@@ -211,6 +216,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       loadUsers();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to remove access');
+    }
+  };
+
+  const handlePermanentlyDeleteUser = async (user: User) => {
+    if (!confirm(`Permanently delete ${user.name} and all their access records? This cannot be undone.`)) return;
+    try {
+      await dataService.deleteUser(user.id);
+      loadUsers();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to delete user');
     }
   };
 
@@ -512,6 +527,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         <p className="text-xs text-slate-500 truncate">{u.email}</p>
                         <p className="text-[10px] text-slate-400">{u.status}</p>
                       </div>
+                      <button
+                        onClick={() => handlePermanentlyDeleteUser(u)}
+                        className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                        title="Permanently Delete User"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                      </button>
                     </div>
 
                     <div className="mt-4 space-y-3">
