@@ -54,6 +54,8 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ onViewOrder, active
   const [typeFilter, setTypeFilter] = useState<OrderTypeFilter>('ALL');
   const [showTypePickerFor, setShowTypePickerFor] = useState(false);
   const [deletingOrderId, setDeletingOrderId] = useState<number | null>(null);
+  const [showNewOrderPicker, setShowNewOrderPicker] = useState(false);
+  const [showNewOrderPickerEmpty, setShowNewOrderPickerEmpty] = useState(false);
   const [confirmDeleteOrderId, setConfirmDeleteOrderId] = useState<number | null>(null);
   const [deleteOrderError, setDeleteOrderError] = useState<string | null>(null);
   const [duplicatingOrderId, setDuplicatingOrderId] = useState<number | null>(null);
@@ -475,32 +477,56 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ onViewOrder, active
           <div className="max-w-4xl mx-auto space-y-4">
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-4">
               <h2 className="text-xl font-bold bg-gradient-to-r from-slate-800 to-slate-500 bg-clip-text text-transparent">Order History</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex flex-wrap bg-black/20 border border-white/5 p-1 rounded-xl shadow-inner gap-1">
-                  {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as const).map(f => (
-                    <button
-                      key={f}
-                      onClick={() => setTypeFilter(f)}
-                      className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${typeFilter === f ? 'bg-ibg-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
-                    >
-                      {f === 'ALL' ? 'All Types' : f === 'WEEKLY_FOOD' ? 'Weekly Food' : f}
-                    </button>
-                  ))}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex overflow-x-auto -mx-5 px-5 md:mx-0 md:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="flex bg-black/20 border border-white/5 p-1 rounded-xl shadow-inner gap-1 min-w-max">
+                    {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as const).map(f => (
+                      <button
+                        key={f}
+                        onClick={() => setTypeFilter(f)}
+                        className={`px-4 py-2 text-[10px] md:text-xs font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${typeFilter === f ? 'bg-ibg-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
+                      >
+                        {f === 'ALL' ? 'All Types' : f === 'WEEKLY_FOOD' ? 'Weekly Food' : f}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 {isSuperAdmin() && (
-                  <button
-                    onClick={() => {
-                      if (onCreateOrder) {
-                        onCreateOrder((typeFilter === 'ALL' ? 'WEEKLY_FOOD' : typeFilter) as OrderType);
-                      } else {
-                        onViewOrder({ id: 0, status: 'OPEN', created_at: '', restaurant_id: 0, created_by: '', type: 'WEEKLY_FOOD' }, true);
-                      }
-                    }}
-                    className="flex items-center gap-2 px-4 py-1.5 bg-ibg-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-ibg-700 transition-colors shadow-lg shadow-ibg-100"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-                    New Order
-                  </button>
+                  <div className="relative shrink-0">
+                    <button
+                      onClick={() => setShowNewOrderPicker(!showNewOrderPicker)}
+                      className="flex items-center gap-2 px-4 py-1.5 bg-ibg-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-ibg-700 transition-colors shadow-lg shadow-ibg-100"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                      New Order
+                    </button>
+                    {showNewOrderPicker && (
+                      <>
+                        <div className="fixed inset-0 bg-black/60 z-40 md:hidden animate-in fade-in" onClick={() => setShowNewOrderPicker(false)}></div>
+                        <div className="fixed bottom-0 left-0 right-0 pb-6 bg-slate-800 border-t border-slate-700 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-50 overflow-hidden divide-y divide-slate-700/50 animate-in slide-in-from-bottom-full md:absolute md:top-full md:bottom-auto md:left-auto md:right-0 md:mt-2 md:w-64 md:border md:rounded-xl md:shadow-2xl md:animate-none md:pb-0">
+                          <div className="md:hidden w-12 h-1.5 bg-slate-600 rounded-full mx-auto my-3 opacity-50"></div>
+                          <div className="px-5 py-4 md:px-4 md:py-3 md:bg-slate-900/50 text-[11px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest text-left">Select Order Type</div>
+                          {(['WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as const).map(type => (
+                            <button
+                              key={type}
+                              onClick={() => {
+                                setShowNewOrderPicker(false);
+                                if (onCreateOrder) {
+                                  onCreateOrder(type as OrderType);
+                                } else {
+                                  onViewOrder({ id: 0, status: 'OPEN', created_at: '', restaurant_id: 0, created_by: '', order_type: type }, true);
+                                }
+                              }}
+                              className="w-full text-left px-5 py-4 md:px-4 md:py-3.5 text-base md:text-sm font-bold text-slate-200 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-4 md:gap-3"
+                            >
+                              <span className="text-2xl md:text-xl">{ORDER_TYPE_ICONS[type]}</span>
+                              <span>{type === 'WEEKLY_FOOD' ? 'Weekly Food' : type === 'IBG Products' ? 'IBG Products' : type === 'IBG Crockery' ? 'IBG Crockery' : 'Bar'}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -518,98 +544,127 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ onViewOrder, active
                 <h3 className="text-lg font-bold text-slate-800 mb-1">No orders yet</h3>
                 <p className="text-slate-400 text-sm max-w-xs mx-auto mb-6">Create your first inventory order to start tracking stock.</p>
                 {isSuperAdmin() && (
-                  <button
-                    onClick={() => {
-                      if (onCreateOrder) {
-                        onCreateOrder('WEEKLY_FOOD');
-                      } else {
-                        onViewOrder({ id: 0, status: 'OPEN', created_at: '', restaurant_id: 0, created_by: '', type: 'WEEKLY_FOOD' }, true);
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-ibg-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-ibg-700 transition-colors shadow-xl shadow-ibg-100"
-                  >
-                    Create First Order
-                  </button>
+                  <div className="relative inline-block">
+                    <button
+                      onClick={() => setShowNewOrderPickerEmpty(!showNewOrderPickerEmpty)}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-ibg-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-ibg-700 transition-colors shadow-xl shadow-ibg-100"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                      Create First Order
+                    </button>
+                    {showNewOrderPickerEmpty && (
+                      <>
+                        <div className="fixed inset-0 bg-black/60 z-40 md:hidden animate-in fade-in" onClick={() => setShowNewOrderPickerEmpty(false)}></div>
+                        <div className="fixed bottom-0 left-0 right-0 pb-6 bg-slate-800 border-t border-slate-700 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-50 overflow-hidden divide-y divide-slate-700/50 animate-in slide-in-from-bottom-full md:absolute md:top-14 md:bottom-auto md:left-1/2 md:-translate-x-1/2 md:mt-2 md:w-64 md:border md:rounded-xl md:shadow-2xl md:animate-none md:pb-0">
+                          <div className="md:hidden w-12 h-1.5 bg-slate-600 rounded-full mx-auto my-3 opacity-50"></div>
+                          <div className="px-5 py-4 md:px-4 md:py-3 md:bg-slate-900/50 text-[11px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest text-left">Select Order Type</div>
+                          {(['WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as const).map(type => (
+                            <button
+                              key={type}
+                              onClick={() => {
+                                setShowNewOrderPickerEmpty(false);
+                                if (onCreateOrder) {
+                                  onCreateOrder(type as OrderType);
+                                } else {
+                                  onViewOrder({ id: 0, status: 'OPEN', created_at: '', restaurant_id: 0, created_by: '', order_type: type }, true);
+                                }
+                              }}
+                              className="w-full text-left px-5 py-4 md:px-4 md:py-3.5 text-base md:text-sm font-bold text-slate-200 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-4 md:gap-3"
+                            >
+                              <span className="text-2xl md:text-xl">{ORDER_TYPE_ICONS[type]}</span>
+                              <span>{type === 'WEEKLY_FOOD' ? 'Weekly Food' : type === 'IBG Products' ? 'IBG Products' : type === 'IBG Crockery' ? 'IBG Crockery' : 'Bar'}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3">
                 {orders
-                  .filter(o => typeFilter === 'ALL' || o.type === typeFilter)
-                  .map(o => (
-                    <div key={o.id} className="bg-white border border-slate-200 rounded-3xl p-4 hover:shadow-xl hover:border-ibg-200 transition-all duration-300 group">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4 cursor-pointer flex-1 min-w-0" onClick={() => onViewOrder(o)}>
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm group-hover:scale-110 transition-transform ${o.type === 'BAR' ? 'bg-amber-50 text-amber-600' :
-                            o.type === 'IBG Products' ? 'bg-indigo-50 text-indigo-600' :
-                              o.type === 'IBG Crockery' ? 'bg-emerald-50 text-emerald-600' :
-                                'bg-teal-50 text-teal-600'
-                            }`}>
-                            {ORDER_TYPE_ICONS[o.type as OrderType] || '📦'}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-bold text-slate-800 truncate">
-                                {o.type === 'WEEKLY_FOOD' ? 'Weekly Food' : o.type === 'BAR' ? 'Bar' : o.type === 'IBG Products' ? 'IBG Products' : o.type === 'IBG Crockery' ? 'IBG Crockery' : 'Weekly Food order'}
-                              </h3>
-                              <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${o.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600' :
-                                o.status === 'DRAFT' ? 'bg-slate-100 text-slate-400' :
-                                  'bg-amber-50 text-amber-600'
-                                }`}>
-                                {o.status}
-                              </span>
+                  .filter(o => {
+                    const ot = (o.order_type || (o as any).type || 'WEEKLY_FOOD');
+                    return typeFilter === 'ALL' || ot === typeFilter;
+                  })
+                  .map(o => {
+                    const ot = (o.order_type || (o as any).type || 'WEEKLY_FOOD') as OrderType;
+                    return (
+                      <div key={o.id} className="bg-white border border-slate-200 rounded-3xl p-4 hover:shadow-xl hover:border-ibg-200 transition-all duration-300 group">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4 cursor-pointer flex-1 min-w-0" onClick={() => onViewOrder(o)}>
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm group-hover:scale-110 transition-transform ${ot === 'BAR' ? 'bg-amber-50 text-amber-600' :
+                              ot === 'IBG Products' ? 'bg-indigo-50 text-indigo-600' :
+                                ot === 'IBG Crockery' ? 'bg-emerald-50 text-emerald-600' :
+                                  'bg-teal-50 text-teal-600'
+                              }`}>
+                              {ORDER_TYPE_ICONS[ot] || ORDER_TYPE_ICONS['WEEKLY_FOOD'] || '🥦'}
                             </div>
-                            <p className="text-[11px] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">
-                              {new Date(o.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                              <span className="mx-2 text-slate-200">|</span>
-                              {o.line_count || 0} items
-                            </p>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-slate-800 truncate">
+                                  {ot === 'WEEKLY_FOOD' ? 'Weekly Food' : ot === 'BAR' ? 'Bar' : ot === 'IBG Products' ? 'IBG Products' : ot === 'IBG Crockery' ? 'IBG Crockery' : 'Weekly Food order'}
+                                </h3>
+                                <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${o.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600' :
+                                  o.status === 'DRAFT' ? 'bg-slate-100 text-slate-400' :
+                                    'bg-amber-50 text-amber-600'
+                                  }`}>
+                                  {o.status}
+                                </span>
+                              </div>
+                              <p className="text-[11px] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">
+                                {new Date(o.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                <span className="mx-2 text-slate-200">|</span>
+                                {o.line_count || 0} items
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleDuplicate(o)}
-                            disabled={duplicatingOrderId === Number(o.id)}
-                            className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-ibg-600 transition-colors"
-                            title="Duplicate order"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
-                          </button>
-                          {isSuperAdmin() && (
-                            <div className="relative">
-                              <button
-                                onClick={() => setConfirmDeleteOrderId(confirmDeleteOrderId === Number(o.id) ? null : Number(o.id))}
-                                className="p-2.5 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors"
-                                title="Delete order"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                              </button>
-                              {confirmDeleteOrderId === Number(o.id) && (
-                                <div className="absolute right-0 bottom-full mb-2 bg-white border border-slate-200 rounded-2xl p-3 shadow-2xl z-50 w-48 animate-in zoom-in-95 overflow-hidden">
-                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 text-center">Delete this order?</p>
-                                  <div className="flex gap-2">
-                                    <button
-                                      onClick={() => handleDeleteOrder(Number(o.id))}
-                                      disabled={deletingOrderId === Number(o.id)}
-                                      className="flex-1 bg-rose-600 text-white text-[10px] font-black uppercase tracking-widest py-2 rounded-xl hover:bg-rose-700"
-                                    >
-                                      Yes
-                                    </button>
-                                    <button
-                                      onClick={() => setConfirmDeleteOrderId(null)}
-                                      className="flex-1 bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest py-2 rounded-xl hover:bg-slate-200"
-                                    >
-                                      No
-                                    </button>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleDuplicate(o)}
+                              disabled={duplicatingOrderId === Number(o.id)}
+                              className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-ibg-600 transition-colors"
+                              title="Duplicate order"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
+                            </button>
+                            {isSuperAdmin() && (
+                              <div className="relative">
+                                <button
+                                  onClick={() => setConfirmDeleteOrderId(confirmDeleteOrderId === Number(o.id) ? null : Number(o.id))}
+                                  className="p-2.5 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors"
+                                  title="Delete order"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                                </button>
+                                {confirmDeleteOrderId === Number(o.id) && (
+                                  <div className="absolute right-0 bottom-full mb-2 bg-white border border-slate-200 rounded-2xl p-3 shadow-2xl z-50 w-48 animate-in zoom-in-95 overflow-hidden">
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 text-center">Delete this order?</p>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => handleDeleteOrder(Number(o.id))}
+                                        disabled={deletingOrderId === Number(o.id)}
+                                        className="flex-1 bg-rose-600 text-white text-[10px] font-black uppercase tracking-widest py-2 rounded-xl hover:bg-rose-700"
+                                      >
+                                        Yes
+                                      </button>
+                                      <button
+                                        onClick={() => setConfirmDeleteOrderId(null)}
+                                        className="flex-1 bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest py-2 rounded-xl hover:bg-slate-200"
+                                      >
+                                        No
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
           </div>
@@ -619,67 +674,76 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ onViewOrder, active
         <div className="flex-1 flex flex-col min-h-0 bg-slate-50">
           {/* Products Filter Bar */}
           <div className="p-4 bg-white border-b border-slate-200 shadow-sm sticky top-[49px] z-20">
-            <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-4">
-              <div className="flex-1 relative">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={prodSearch}
-                  onChange={(e) => setProdSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-ibg-400 transition-all font-medium"
-                />
-              </div>
-              <div className="flex flex-wrap lg:flex-row items-center gap-2">
-                <div className="flex flex-wrap bg-black/20 border border-white/5 p-1 rounded-xl shadow-inner gap-1 w-full xl:w-auto">
-                  {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as const).map(f => (
-                    <button
-                      key={f}
-                      onClick={() => { setProdTypeFilter(f); setProdCategoryFilter('ALL'); }}
-                      className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${prodTypeFilter === f ? 'bg-ibg-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
-                    >
-                      {f === 'ALL' ? 'All Types' : f === 'WEEKLY_FOOD' ? 'Weekly Food' : f}
-                    </button>
-                  ))}
-                </div>
-                <select
-                  value={prodCategoryFilter}
-                  onChange={(e) => setProdCategoryFilter(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
-                  className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-ibg-400"
-                >
-                  <option value="ALL">All Categories</option>
-                  {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <select
-                  value={prodVendorFilter}
-                  onChange={(e) => setProdVendorFilter(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
-                  className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-ibg-400"
-                >
-                  <option value="ALL">All Vendors</option>
-                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
+            <div className="max-w-6xl mx-auto flex flex-col gap-4">
 
-                <div className="flex items-center gap-2 ml-auto">
-                  {isSuperAdmin() && (
-                    <>
+              {/* Row 1: Search and Actions */}
+              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+                <div className="flex-1 relative">
+                  <svg className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                  <input
+                    type="text"
+                    placeholder="Search products..."
+                    value={prodSearch}
+                    onChange={(e) => setProdSearch(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 shadow-inner rounded-xl text-[15px] focus:outline-none focus:ring-2 focus:ring-ibg-400 transition-all font-bold placeholder:font-medium placeholder:text-slate-400"
+                  />
+                </div>
+
+                {isSuperAdmin() && (
+                  <div className="flex gap-2 shrink-0 h-[48px] md:h-auto">
+                    <button
+                      onClick={toggleBulkEditMode}
+                      className={`flex-1 md:flex-none px-4 rounded-xl text-[11px] md:text-xs font-black uppercase tracking-widest transition-all shadow-sm ${bulkEditMode
+                        ? 'bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                        }`}
+                    >
+                      {bulkEditMode ? 'Cancel Bulk' : 'Bulk Edit'}
+                    </button>
+                    <button
+                      onClick={() => setShowAddForm(!showAddForm)}
+                      className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 bg-ibg-600 text-white rounded-xl text-[11px] md:text-xs font-black uppercase tracking-widest hover:bg-ibg-700 transition-colors shadow-lg shadow-ibg-100"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                      Add Product
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Row 2: Filters */}
+              <div className="flex flex-col lg:flex-row gap-3">
+                <div className="flex overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="flex bg-black/20 border border-white/5 p-1 rounded-xl shadow-inner gap-1 min-w-max">
+                    {(['ALL', 'WEEKLY_FOOD', 'BAR', 'IBG Products', 'IBG Crockery'] as const).map(f => (
                       <button
-                        onClick={toggleBulkEditMode}
-                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-sm ${bulkEditMode
-                          ? 'bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200'
-                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                          }`}
+                        key={f}
+                        onClick={() => { setProdTypeFilter(f); setProdCategoryFilter('ALL'); }}
+                        className={`px-4 py-2 text-[10px] md:text-xs font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${prodTypeFilter === f ? 'bg-ibg-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
                       >
-                        {bulkEditMode ? 'Cancel Bulk' : 'Bulk Edit'}
+                        {f === 'ALL' ? 'All Types' : f === 'WEEKLY_FOOD' ? 'Weekly Food' : f}
                       </button>
-                      <button
-                        onClick={() => setShowAddForm(!showAddForm)}
-                        className="flex items-center gap-2 px-4 py-2 bg-ibg-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-ibg-700 transition-colors shadow-lg shadow-ibg-100"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-                        Add Product
-                      </button>
-                    </>
-                  )}
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-2 flex-1">
+                  <select
+                    value={prodCategoryFilter}
+                    onChange={(e) => setProdCategoryFilter(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
+                    className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-xl text-[13px] font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-ibg-400"
+                  >
+                    <option value="ALL">All Categories</option>
+                    {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <select
+                    value={prodVendorFilter}
+                    onChange={(e) => setProdVendorFilter(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
+                    className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-xl text-[13px] font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-ibg-400"
+                  >
+                    <option value="ALL">All Vendors</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
                 </div>
               </div>
             </div>
