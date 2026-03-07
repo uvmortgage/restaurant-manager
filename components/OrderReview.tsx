@@ -269,7 +269,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
 
   // ── Share ─────────────────────────────────────────────────────────────────
 
-  const handleShare = async () => {
+  const handleExport = async (action: 'share' | 'download') => {
     setSharing(true); setError(null);
     try {
       const displayOrder = submitted
@@ -278,7 +278,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
       const groups = makeVendorGroups(lines);
       const file = await generateOrderImage(displayOrder, lines, groups);
 
-      if (navigator.canShare?.({ files: [file] })) {
+      if (action === 'share' && navigator.canShare?.({ files: [file] })) {
         await navigator.share({
           title: `Inventory Order — Due ${fmtDate(order.due_date)}`,
           text: `${lines.length} items · Submitted by ${user.name}`,
@@ -291,7 +291,7 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
         URL.revokeObjectURL(url);
       }
     } catch (e: any) {
-      if (e?.name !== 'AbortError') setError('Could not share. Try again.');
+      if (e?.name !== 'AbortError') setError(`Could not ${action}. Try again.`);
     } finally {
       setSharing(false);
     }
@@ -650,12 +650,12 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
               {/* Line rows */}
               <div className="divide-y divide-slate-50">
                 {vLines.map((line) => (
-                  <div key={line.id} className="px-4 py-3 flex items-center gap-3">
+                  <div key={line.id} className="px-4 py-3 flex flex-col md:flex-row md:items-center gap-3 md:gap-6 justify-between">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <p className={`text-sm font-bold leading-tight ${line.shopping_status === 'FOUND' || line.shopping_status === 'ALTERNATIVE'
-                            ? 'text-slate-400 line-through'
-                            : 'text-slate-800'
+                          ? 'text-slate-400 line-through'
+                          : 'text-slate-800'
                           }`}>
                           {line.product_name}
                         </p>
@@ -686,27 +686,27 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
                     </div>
 
                     {/* Edit controls — always visible */}
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 md:justify-end self-end md:self-auto w-full md:w-auto mt-2 md:mt-0">
                       <input
                         type="number" min="0.1" step="0.5"
                         value={getEditQty(line)}
                         onChange={e => patchEdit(line.id, { qty: e.target.value })}
                         onBlur={() => saveLineToDB(line.id)}
-                        className="w-14 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-bold text-sm text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
+                        className="flex-1 md:flex-none md:w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-bold text-sm text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
                       />
                       <input
                         type="text"
                         value={getEditUnit(line)}
                         onChange={e => patchEdit(line.id, { unit: e.target.value })}
                         onBlur={() => saveLineToDB(line.id)}
-                        className="w-14 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-500 font-medium text-xs text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
+                        className="flex-1 md:flex-none md:w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-500 font-medium text-xs text-center focus:outline-none focus:ring-2 focus:ring-teal-400"
                         placeholder="unit"
                       />
                       <button
                         onClick={() => handleDeleteLine(line.id)}
-                        className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition-colors bg-rose-50/50 md:bg-transparent"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                       </button>
                     </div>
                   </div>
@@ -788,39 +788,53 @@ const OrderReview: React.FC<Props> = ({ user, order, onBack, onSubmitted, onDele
           )}
 
           {canShare && (
-            <div className="flex gap-3">
-              <button
-                onClick={handleShare} disabled={sharing}
-                className={`flex-1 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2 ${sharing
-                  ? 'border-slate-200 text-slate-400 bg-white cursor-not-allowed'
-                  : 'border-teal-600 text-teal-600 bg-white hover:bg-teal-50 active:scale-[0.98]'
-                  }`}
-              >
-                {sharing ? (
-                  <>
-                    <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>
-                    Share Order
-                  </>
+            <div className="flex flex-col md:flex-row gap-3">
+              <div className="flex gap-2 flex-1">
+                {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
+                  <button
+                    onClick={() => handleExport('share')} disabled={sharing}
+                    className={`flex-1 py-3.5 rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2 ${sharing
+                      ? 'border-slate-200 text-slate-400 bg-white cursor-not-allowed'
+                      : 'border-teal-600 text-teal-600 bg-white hover:bg-teal-50 active:scale-[0.98]'
+                      }`}
+                  >
+                    {sharing ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Wait...
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>
+                        Share
+                      </>
+                    )}
+                  </button>
                 )}
-              </button>
-              <button
-                onClick={() => setShoppingMode(true)}
-                className="flex-1 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-black active:scale-[0.98] shadow-md shadow-slate-200 transition-all flex items-center justify-center gap-2"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" /></svg>
-                Shopping
-              </button>
+                <button
+                  onClick={() => handleExport('download')} disabled={sharing}
+                  className={`flex-1 py-3.5 rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2 ${sharing
+                    ? 'border-slate-200 text-slate-400 bg-white cursor-not-allowed'
+                    : 'border-teal-600 text-teal-600 bg-white hover:bg-teal-50 active:scale-[0.98]'
+                    }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
+                  Download
+                </button>
+                <button
+                  onClick={() => setShoppingMode(true)}
+                  className="flex-1 py-3.5 rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest bg-slate-900 text-white hover:bg-black active:scale-[0.98] shadow-md shadow-slate-200 transition-all flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" /></svg>
+                  Store Shop
+                </button>
+              </div>
               <button
                 onClick={submitted ? onSubmitted : onBack}
-                className="flex-1 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] shadow-md shadow-teal-200 transition-all"
+                className="w-full md:w-auto md:flex-1 py-3.5 px-8 rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] shadow-md shadow-teal-200 transition-all flex justify-center items-center"
               >
                 Done
               </button>
